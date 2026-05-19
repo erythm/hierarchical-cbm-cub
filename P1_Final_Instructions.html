@@ -1,0 +1,1297 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P1 — Hierarchical Concept-Based Explainable-by-Design Models</title>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f8f7f4;
+    --surface: #ffffff;
+    --surface2: #f1efe9;
+    --border: #e2dfd6;
+    --text: #1a1a18;
+    --text-dim: #5f5e5a;
+    --text-muted: #888780;
+    --accent-blue: #185fa5;
+    --accent-blue-bg: #e6f1fb;
+    --accent-teal: #0f6e56;
+    --accent-teal-bg: #e1f5ee;
+    --accent-amber: #854f0b;
+    --accent-amber-bg: #faeeda;
+    --accent-red: #a32d2d;
+    --accent-red-bg: #fcebeb;
+    --accent-purple: #534ab7;
+    --accent-purple-bg: #eeedfe;
+    --accent-green: #3b6d11;
+    --accent-green-bg: #eaf3de;
+    --code-bg: #f1efe9;
+    --code-border: #d3d1c7;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Vazirmatn', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.8;
+  }
+
+  .page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 48px 32px 80px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    padding: 48px 0 40px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 48px;
+  }
+
+  .header-badge {
+    display: inline-block;
+    background: var(--accent-blue-bg);
+    color: var(--accent-blue);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    padding: 4px 14px;
+    border-radius: 100px;
+    margin-bottom: 18px;
+    text-transform: uppercase;
+  }
+
+  .header h1 {
+    font-size: 28px;
+    font-weight: 900;
+    color: var(--text);
+    margin-bottom: 10px;
+    line-height: 1.4;
+  }
+
+  .header-sub {
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 400;
+  }
+
+  /* TOC */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 48px;
+  }
+
+  .toc-title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+
+  .toc-list {
+    list-style: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 24px;
+  }
+
+  .toc-list li a {
+    color: var(--accent-blue);
+    text-decoration: none;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .toc-list li a:hover { text-decoration: underline; }
+
+  .toc-num {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    min-width: 20px;
+  }
+
+  /* Sections */
+  .section {
+    margin-bottom: 56px;
+  }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-label::before {
+    content: '';
+    width: 3px;
+    height: 14px;
+    background: var(--accent-blue);
+    border-radius: 2px;
+    display: inline-block;
+  }
+
+  .section h2 {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 20px;
+    line-height: 1.4;
+  }
+
+  .section h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 24px 0 12px;
+  }
+
+  .section p {
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    line-height: 1.9;
+  }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 26px;
+    margin-bottom: 16px;
+  }
+
+  .card-accent-blue  { border-right: 3px solid var(--accent-blue); }
+  .card-accent-teal  { border-right: 3px solid var(--accent-teal); }
+  .card-accent-amber { border-right: 3px solid var(--accent-amber); }
+  .card-accent-red   { border-right: 3px solid var(--accent-red); }
+  .card-accent-purple{ border-right: 3px solid var(--accent-purple); }
+  .card-accent-green { border-right: 3px solid var(--accent-green); }
+
+  /* Code blocks */
+  .code {
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-family: 'Courier New', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.9;
+    direction: ltr;
+    text-align: left;
+    color: var(--text);
+    overflow-x: auto;
+    margin: 14px 0;
+    white-space: pre;
+  }
+
+  .code .c-blue  { color: var(--accent-blue); font-weight: 600; }
+  .code .c-teal  { color: var(--accent-teal); font-weight: 600; }
+  .code .c-amber { color: var(--accent-amber); font-weight: 600; }
+  .code .c-red   { color: var(--accent-red); }
+  .code .c-dim   { color: var(--text-muted); }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; margin: 16px 0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  thead tr {
+    background: var(--surface2);
+  }
+
+  th {
+    padding: 10px 14px;
+    text-align: right;
+    font-weight: 700;
+    color: var(--text);
+    border-bottom: 2px solid var(--border);
+    font-size: 13px;
+  }
+
+  td {
+    padding: 10px 14px;
+    text-align: right;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  td code, th code {
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--accent-blue);
+    direction: ltr;
+    display: inline-block;
+  }
+
+  /* Inline code */
+  p code, li code {
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--accent-blue);
+    direction: ltr;
+    display: inline-block;
+  }
+
+  /* Badges */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 100px;
+  }
+  .badge-blue   { background: var(--accent-blue-bg);   color: var(--accent-blue); }
+  .badge-teal   { background: var(--accent-teal-bg);   color: var(--accent-teal); }
+  .badge-amber  { background: var(--accent-amber-bg);  color: var(--accent-amber); }
+  .badge-red    { background: var(--accent-red-bg);    color: var(--accent-red); }
+  .badge-green  { background: var(--accent-green-bg);  color: var(--accent-green); }
+  .badge-purple { background: var(--accent-purple-bg); color: var(--accent-purple); }
+
+  /* Callout */
+  .callout {
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    font-size: 14px;
+    line-height: 1.8;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .callout-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+  .callout-blue   { background: var(--accent-blue-bg);   color: #0c447c; }
+  .callout-amber  { background: var(--accent-amber-bg);  color: #633806; }
+  .callout-red    { background: var(--accent-red-bg);    color: #791f1f; }
+  .callout-green  { background: var(--accent-green-bg);  color: #27500a; }
+
+  /* List */
+  .fa-list { list-style: none; padding: 0; }
+  .fa-list li {
+    padding: 6px 0;
+    padding-right: 20px;
+    position: relative;
+    color: var(--text-dim);
+    font-size: 14px;
+    line-height: 1.8;
+  }
+  .fa-list li::before {
+    content: '—';
+    position: absolute;
+    right: 0;
+    color: var(--text-muted);
+  }
+
+  /* Pipeline */
+  .pipeline { display: flex; flex-direction: column; gap: 0; }
+
+  .pipe-step {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .pipe-track {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 36px;
+    flex-shrink: 0;
+  }
+
+  .pipe-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 18px;
+    z-index: 1;
+  }
+
+  .pipe-line {
+    width: 2px;
+    flex: 1;
+    min-height: 12px;
+    background: var(--border);
+    margin: 2px 0;
+  }
+
+  .pipe-body {
+    flex: 1;
+    padding: 8px 0 8px 0;
+    padding-right: 12px;
+  }
+
+  .pipe-card {
+    border-radius: 10px;
+    padding: 14px 18px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .pipe-card h4 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 5px;
+  }
+
+  .pipe-card p {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin: 0;
+    line-height: 1.7;
+  }
+
+  .pipe-blue   .pipe-dot { background: var(--accent-blue);   box-shadow: 0 0 0 3px var(--accent-blue-bg); }
+  .pipe-teal   .pipe-dot { background: var(--accent-teal);   box-shadow: 0 0 0 3px var(--accent-teal-bg); }
+  .pipe-purple .pipe-dot { background: var(--accent-purple); box-shadow: 0 0 0 3px var(--accent-purple-bg); }
+  .pipe-amber  .pipe-dot { background: var(--accent-amber);  box-shadow: 0 0 0 3px var(--accent-amber-bg); }
+  .pipe-green  .pipe-dot { background: var(--accent-green);  box-shadow: 0 0 0 3px var(--accent-green-bg); }
+
+  .pipe-blue   .pipe-card { border-color: #b5d4f4; }
+  .pipe-teal   .pipe-card { border-color: #9fe1cb; }
+  .pipe-purple .pipe-card { border-color: #afa9ec; }
+  .pipe-amber  .pipe-card { border-color: #fac775; }
+  .pipe-green  .pipe-card { border-color: #c0dd97; }
+
+  .pipe-blue   .pipe-card h4 { color: var(--accent-blue); }
+  .pipe-teal   .pipe-card h4 { color: var(--accent-teal); }
+  .pipe-purple .pipe-card h4 { color: var(--accent-purple); }
+  .pipe-amber  .pipe-card h4 { color: var(--accent-amber); }
+  .pipe-green  .pipe-card h4 { color: var(--accent-green); }
+
+  /* Tags */
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+  .tag {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    padding: 3px 12px;
+    font-size: 12px;
+    color: var(--text-dim);
+    font-family: 'Courier New', monospace;
+    direction: ltr;
+    display: inline-block;
+  }
+
+  /* Formula box */
+  .formula {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin: 14px 0;
+    direction: ltr;
+    text-align: center;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    color: var(--text);
+    line-height: 2;
+  }
+
+  /* Phase cards */
+  .phase-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+
+  .phase-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+
+  .phase-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .phase-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .phase-desc  { font-size: 13px; color: var(--text-dim); line-height: 1.7; }
+
+  /* Concept glossary */
+  .glossary { display: flex; flex-direction: column; gap: 0; }
+
+  .glossary-item {
+    display: flex;
+    gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: flex-start;
+  }
+
+  .glossary-item:last-child { border-bottom: none; }
+
+  .glossary-term {
+    min-width: 200px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    direction: ltr;
+    text-align: left;
+    padding-top: 2px;
+  }
+
+  .glossary-def {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.8;
+    flex: 1;
+  }
+
+  /* Reference list */
+  .ref-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .ref-item {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .ref-num {
+    min-width: 28px;
+    height: 28px;
+    background: var(--surface2);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .ref-content { flex: 1; }
+  .ref-title { font-size: 13px; font-weight: 600; color: var(--text); direction: ltr; text-align: left; }
+  .ref-role  { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+
+  /* Divider */
+  hr { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+
+  /* Output example */
+  .output-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 16px 0;
+  }
+
+  .output-row {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .output-row:last-child { border-bottom: none; }
+
+  .output-row-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .concept-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .ctag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    padding: 4px 12px;
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .ctag .prob {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: 'Courier New', monospace;
+  }
+
+  .result-final {
+    font-size: 20px;
+    font-weight: 900;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border);
+    margin-top: 48px;
+  }
+
+  strong { font-weight: 700; color: var(--text); }
+
+  @media (max-width: 600px) {
+    .toc-list { grid-template-columns: 1fr; }
+    .phase-grid { grid-template-columns: 1fr; }
+    .glossary-term { min-width: 140px; }
+    .page { padding: 24px 16px 48px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-badge">Explainable & Trustworthy AI — PoliTo 2025/2026</div>
+    <h1>P1 — Hierarchical Concept-Based<br>Explainable-by-Design Models</h1>
+    <div class="header-sub">Reference teachers: Eliana Pastor &amp; Eleonora Poeta &nbsp;·&nbsp; راهنمای کامل پروژه</div>
+  </div>
+
+  <!-- TOC -->
+  <div class="toc">
+    <div class="toc-title">فهرست مطالب</div>
+    <ul class="toc-list">
+      <li><a href="#s1"><span class="toc-num">۱</span> نگاه کلی</a></li>
+      <li><a href="#s2"><span class="toc-num">۲</span> انتخاب‌های نهایی</a></li>
+      <li><a href="#s3"><span class="toc-num">۳</span> Research Gaps</a></li>
+      <li><a href="#s4"><span class="toc-num">۴</span> معماری نهایی</a></li>
+      <li><a href="#s5"><span class="toc-num">۵</span> Dataset Preprocessing</a></li>
+      <li><a href="#s6"><span class="toc-num">۶</span> Loss Function</a></li>
+      <li><a href="#s7"><span class="toc-num">۷</span> Training Procedure</a></li>
+      <li><a href="#s8"><span class="toc-num">۸</span> Evaluation</a></li>
+      <li><a href="#s9"><span class="toc-num">۹</span> خروجی نهایی</a></li>
+      <li><a href="#s10"><span class="toc-num">۱۰</span> مفاهیم کلیدی</a></li>
+      <li><a href="#s11"><span class="toc-num">۱۱</span> References</a></li>
+    </ul>
+  </div>
+
+  <!-- Section 1 -->
+  <div class="section" id="s1">
+    <div class="section-label">بخش اول</div>
+    <h2>یک نگاه کلی</h2>
+    <p>هدف این پروژه طراحی مدلی هست که نه فقط پیش‌بینی می‌کنه، بلکه <strong>توضیح می‌ده چرا</strong> — و این توضیح رو در <strong>چند سطح</strong> از کلی به جزئی ارائه می‌ده.</p>
+    <p>مثال: وقتی مدل می‌گه «این عکس گنجشکه»، باید بتونه بگه:</p>
+    <div class="code"><span class="c-teal">سطح کلی:</span>   سر ✅  بدن ✅  بال ✅  پا ✅
+<span class="c-blue">سطح جزئی:</span>  منقار_کوچیک ✅  بال_قهوه‌ای ✅  چشم_گرد ✅
+<span class="c-amber">نتیجه:</span>     → گنجشک 🐦</div>
+    <div class="callout callout-blue">
+      <div class="callout-icon">💡</div>
+      <div>این رویکرد در ادبیات XAI به <strong>explainable-by-design</strong> معروفه — برخلاف post-hoc methods که بعد از training توضیح می‌دن، اینجا interpretability در معماری مدل جاسازی شده.</div>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- Section 2 -->
+  <div class="section" id="s2">
+    <div class="section-label">بخش دوم</div>
+    <h2>انتخاب‌های نهایی</h2>
+
+    <h3>Dataset: CUB-200-2011</h3>
+    <p>چرا این dataset؟</p>
+    <ul class="fa-list">
+      <li>مثال <code>beak → head</code> که پروفسور در توضیحات پروژه آورده دقیقاً از همین حوزه‌ست</li>
+      <li>سه نوع annotation آماده داره که به سه بخش مدل ما map می‌شن</li>
+      <li>standard benchmark برای CBM papers — در مقاله اصلی Koh et al. 2020 هم استفاده شده</li>
+    </ul>
+
+    <div class="table-wrap" style="margin-top: 16px;">
+      <table>
+        <thead>
+          <tr>
+            <th>نوع Annotation</th>
+            <th>جزئیات</th>
+            <th>استفاده در مدل</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>312 Binary Attributes</strong></td>
+            <td><code>has_bill_shape::dagger</code>, <code>has_wing_color::brown</code>, ...</td>
+            <td><span class="badge badge-purple">Concept Layer 2 — Fine</span></td>
+          </tr>
+          <tr>
+            <td><strong>Part Locations</strong></td>
+            <td>مختصات + visibility flag برای سر، منقار، بال، دم، پا</td>
+            <td><span class="badge badge-amber">فقط visibility masking در loss</span></td>
+          </tr>
+          <tr>
+            <td><strong>Class Labels</strong></td>
+            <td>200 گونه پرنده</td>
+            <td><span class="badge badge-green">خروجی نهایی</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-amber">
+      <div class="callout-icon">⚠️</div>
+      <div><strong>نکته مهم:</strong> Part Locations فقط presence indicator هستن (این part در تصویر دیده می‌شه یا نه)، نه concept. Concept Layer 1 رو از <strong>parsing نام attribute‌ها</strong> می‌سازیم، نه از Part Locations.</div>
+    </div>
+
+    <h3>Direction پیاده‌سازی: Multi-level CBM</h3>
+    <p>از سه direction ممکن در توضیحات استاد، <strong>Direction 1</strong> رو انتخاب کردیم:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Direction</th><th>وضعیت</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Multi-level CBM</strong> — دو Concept Layer با سطوح مختلف</td>
+            <td><span class="badge badge-green">✅ پیاده‌سازی می‌کنیم</span></td>
+          </tr>
+          <tr>
+            <td>Coarse→Fine Constraint</td>
+            <td><span class="badge badge-amber">جزئی — از طریق Loss و Masked Head</span></td>
+          </tr>
+          <tr>
+            <td>Multi-level Explanation</td>
+            <td><span class="badge badge-blue">در بخش Evaluation پوشش می‌دیم</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- Section 3 -->
+  <div class="section" id="s3">
+    <div class="section-label">بخش سوم</div>
+    <h2>Research Gaps</h2>
+    <p>سه gap که استاد در project description تعریف کرده. هر سه رو در literature review توضیح می‌دیم، ولی implementation فقط روی Gap 1 تمرکز داره.</p>
+
+    <div class="card card-accent-red" style="margin-top: 20px;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <span class="badge badge-red">Gap 1</span>
+        <strong>مفاهیم Flat هستن — ما اینجا کار می‌کنیم</strong>
+      </div>
+      <p>مدل‌های CBM فعلی مفاهیم رو بدون رابطه‌ای با هم ذخیره می‌کنن:</p>
+      <div class="code"><span class="c-red">CBM فعلی:</span> [منقار_کوچیک | بال_قهوه‌ای | سر | چشم_گرد | پا] → گنجشک
+              ↑ همه هم‌سطح، بدون رابطه</div>
+      <p style="margin-bottom:0;">درحالی‌که <code>منقار_کوچیک</code> زیرمجموعه‌ی <code>سر</code> هست. راه‌حل ما: دو Concept Layer سلسله‌مراتبی.</p>
+    </div>
+
+    <div class="card card-accent-amber">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <span class="badge badge-amber">Gap 2</span>
+        <strong>Prediction از Hierarchy استفاده نمی‌کنه</strong>
+      </div>
+      <p style="margin-bottom:0;">هیچ constraint ای وجود نداره که بگه «اگه سر تشخیص داده نشد، منقار هم نمی‌تونه تشخیص داده بشه». ما این رو از طریق <strong>Masked Fine Head</strong> و <strong>Consistency Loss</strong> address می‌کنیم.</p>
+    </div>
+
+    <div class="card card-accent-blue">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <span class="badge badge-blue">Gap 3</span>
+        <strong>Evaluation سلسله‌مراتبی نیست</strong>
+      </div>
+      <p style="margin-bottom:0;">اشتباه گرفتن گنجشک با کبوتر با اشتباه گرفتن گنجشک با کروکودیل یکسان نیست، ولی متریک‌های فعلی هر دو رو به یه شکل می‌شمارن. ما این رو در Evaluation با <strong>Hierarchical Distance metric</strong> پوشش می‌دیم.</p>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- Section 4 -->
+  <div class="section" id="s4">
+    <div class="section-label">بخش چهارم</div>
+    <h2>معماری نهایی</h2>
+
+    <h3>جریان کلی داده</h3>
+    <div class="pipeline">
+      <div class="pipe-step pipe-blue">
+        <div class="pipe-track"><div class="pipe-dot"></div><div class="pipe-line"></div></div>
+        <div class="pipe-body">
+          <div class="pipe-card">
+            <h4>📷 ورودی</h4>
+            <p>عکس پرنده — ورودی مدل</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-step pipe-blue">
+        <div class="pipe-track"><div class="pipe-dot"></div><div class="pipe-line"></div></div>
+        <div class="pipe-body">
+          <div class="pipe-card">
+            <h4>ResNet-50 — Pretrained Backbone</h4>
+            <p>آخرین FC layer حذف شده. خروجی: Feature Map F با ابعاد [2048]. این بخش دست نمی‌زنیم — فقط fine-tune می‌کنیم.</p>
+            <div class="tags">
+              <span class="tag">Output: F ∈ ℝ^2048</span>
+              <span class="tag">Pretrained: ImageNet</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-step pipe-teal">
+        <div class="pipe-track"><div class="pipe-dot"></div><div class="pipe-line"></div></div>
+        <div class="pipe-body">
+          <div class="pipe-card">
+            <h4>Coarse Head g_c(F) — سطح ۱</h4>
+            <p>از Feature Map مفاهیم کلی (parts) رو تشخیص می‌ده.</p>
+            <div class="code" style="margin:10px 0 6px; font-size:12px;">Linear(2048→512) → ReLU → Dropout(0.3) → Linear(512→13)
+p_c = σ(z_c)  <span class="c-dim">← 13 احتمال برای هر part</span></div>
+            <div class="tags">
+              <span class="tag">سر: 0.9</span>
+              <span class="tag">بدن: 0.8</span>
+              <span class="tag">بال: 0.85</span>
+              <span class="tag">پا: 0.7</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-step pipe-purple">
+        <div class="pipe-track"><div class="pipe-dot"></div><div class="pipe-line"></div></div>
+        <div class="pipe-body">
+          <div class="pipe-card">
+            <h4>Fine Head g_f(F, p_c) — Masked — سطح ۲</h4>
+            <p>از ترکیب Feature Map و p_c ساخته می‌شه. بعد از محاسبه، Masked Fine Head اعمال می‌شه.</p>
+            <div class="code" style="margin:10px 0 6px; font-size:12px;">concat([F, p_c]) → [2048+13 = 2061]
+→ Linear(2061→512) → ReLU → Dropout(0.3) → Linear(512→312)
+p_f_raw = σ(z_f)
+<span class="c-blue">mask[i] = p_c[parent(i)]      ← Masked Fine Head</span>
+<span class="c-blue">p_f = p_f_raw × mask          ← hard constraint</span></div>
+            <div class="tags">
+              <span class="tag">bill_shape_dagger: 0.89</span>
+              <span class="tag">wing_color_brown: 0.83</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipe-step pipe-amber">
+        <div class="pipe-track"><div class="pipe-dot"></div></div>
+        <div class="pipe-body">
+          <div class="pipe-card">
+            <h4>🏆 Final Classifier h(p_f)</h4>
+            <p>فقط از p_f می‌خونه — نه از Feature Map. این bottleneck property رو حفظ می‌کنه.</p>
+            <div class="code" style="margin:10px 0 6px; font-size:12px;">Linear(312→200) → 200 گونه پرنده</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Masked Fine Head — قلب معماری</h3>
+    <p>مهم‌ترین بخش معماری. فرمول:</p>
+    <div class="formula">p_f[i] = σ(z_f[i]) × p_c[parent(i)]</div>
+    <p><strong>منطق:</strong> اگه مدل می‌گه <code>head</code> با احتمال 0.1 وجود داره، هیچ attribute مربوط به head نمی‌تونه احتمال بالایی داشته باشه:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>حالت</th><th>p_c[head]</th><th>σ(z_f[bill_dagger])</th><th>p_f[bill_dagger]</th><th>نتیجه</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Head نیست</td>
+            <td><code>0.1</code></td>
+            <td><code>0.9</code></td>
+            <td><code>0.9 × 0.1 = <strong>0.09</strong></code></td>
+            <td>✅ سازگار</td>
+          </tr>
+          <tr>
+            <td>Head هست</td>
+            <td><code>0.95</code></td>
+            <td><code>0.9</code></td>
+            <td><code>0.9 × 0.95 = <strong>0.855</strong></code></td>
+            <td>✅ قوی</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout callout-green">
+      <div class="callout-icon">✅</div>
+      <div>این یک <strong>hard constraint</strong> هست — نه فقط در training، بلکه در inference time هم اعمال می‌شه. برخلاف Consistency Loss که فقط soft penalty در training هست.</div>
+    </div>
+
+    <h3>Bottleneck Property</h3>
+    <p>Classifier فقط از <code>p_f</code> (312-dim) می‌خونه، <strong>نه از Feature Map</strong>. اگه از Feature Map هم بخونه:</p>
+    <ul class="fa-list">
+      <li>Classifier می‌تونه concepts رو bypass کنه و مستقیم از texture و pattern یاد بگیره</li>
+      <li>توضیحات مبتنی بر concepts دروغ می‌شن (interpretability illusion)</li>
+      <li>Concept Intervention دیگه کار نمی‌کنه</li>
+    </ul>
+  </div>
+
+  <hr>
+
+  <!-- Section 5 -->
+  <div class="section" id="s5">
+    <div class="section-label">بخش پنجم</div>
+    <h2>Dataset Preprocessing</h2>
+
+    <h3>ساخت L1 Labels — Coarse Concepts</h3>
+    <p>CUB-200 فایل <code>attributes.txt</code> داره با 312 خط. از parsing نام‌ها، parent هر attribute رو استخراج می‌کنیم:</p>
+
+    <div class="code"><span class="c-dim"># مرحله ۱ — استخراج parent از نام attribute</span>
+has_bill_shape::dagger    → parent: <span class="c-blue">"bill"</span>
+has_wing_color::brown     → parent: <span class="c-blue">"wing"</span>
+has_eye_color::black      → parent: <span class="c-blue">"eye"</span>
+has_crown_color::rufous   → parent: <span class="c-blue">"crown"</span>
+
+<span class="c-dim"># مرحله ۲ — Part categories نهایی (≈13 part)</span>
+bill, wing, tail, breast, belly, leg, eye,
+throat, forehead, nape, crown, back, head
+
+<span class="c-dim"># مرحله ۳ — L1 label برای هر تصویر</span>
+L1[bill] = max(attr[bill_shape_dagger], attr[bill_shape_hooked], ...)</div>
+
+    <h3>ساخت L2 Labels — Fine Concepts</h3>
+    <p>مستقیم از <code>image_attribute_labels.txt</code> — با این فیلترها:</p>
+    <ul class="fa-list">
+      <li>فقط attribute هایی که <strong>certainty ≥ 3</strong> دارن (probably یا definitely)</li>
+      <li>برای attribute هایی که part مربوطه در تصویر <strong>visible نیست</strong>، loss رو mask کن</li>
+    </ul>
+
+    <h3>Splits</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Split</th><th>تعداد</th><th>روش</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Train</strong></td><td>5,994 تصویر</td><td>Official CUB split</td></tr>
+          <tr><td><strong>Val</strong></td><td>~600 تصویر</td><td>10% از train — stratified بر اساس class</td></tr>
+          <tr><td><strong>Test</strong></td><td>5,794 تصویر</td><td>Official CUB split</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Preprocessing تصاویر</h3>
+    <div class="code"><span class="c-teal">Train:</span>   Resize(256) → RandomCrop(224) → RandomHorizontalFlip
+         → ColorJitter(mild) → Normalize(ImageNet stats)
+
+<span class="c-blue">Val/Test:</span> Resize(256) → CenterCrop(224) → Normalize(ImageNet stats)
+
+<span class="c-dim">ImageNet:</span> mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]</div>
+  </div>
+
+  <hr>
+
+  <!-- Section 6 -->
+  <div class="section" id="s6">
+    <div class="section-label">بخش ششم</div>
+    <h2>Loss Function</h2>
+
+    <h3>فرمول کلی</h3>
+    <div class="formula">L_total = λ_c · L_coarse + λ_f · L_fine + λ_cls · L_task + λ_h · L_consistency</div>
+
+    <h3>جزئیات هر Loss</h3>
+
+    <div class="card card-accent-teal">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+        <span class="badge badge-teal">L_coarse</span>
+        <strong>برای Concept Layer 1</strong>
+      </div>
+      <div class="code" style="font-size:12px;">L_coarse = WeightedBCE(z_c, y_coarse)
+pos_weight = N_negative / N_positive   <span class="c-dim">← برای هر part جداگانه</span></div>
+    </div>
+
+    <div class="card card-accent-purple">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+        <span class="badge badge-purple">L_fine</span>
+        <strong>برای Concept Layer 2 — Focal Loss</strong>
+      </div>
+      <div class="code" style="font-size:12px;">L_fine = FocalLoss(z_f, y_fine, α=0.25, γ=2)
+<span class="c-dim">فقط روی attribute هایی که certainty ≥ 3 و part visible باشه</span>
+
+<span class="c-dim"># چرا Focal Loss؟ چون 312 attribute class imbalance شدید دارن:</span>
+Focal Loss = -α(1-p_t)^γ · log(p_t)
+وقتی p_t نزدیک 1 (easy):  (1-p_t)^2 ≈ 0  →  loss ≈ 0
+وقتی p_t نزدیک 0 (hard):  (1-p_t)^2 ≈ 1  →  loss بزرگ</div>
+    </div>
+
+    <div class="card card-accent-amber">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+        <span class="badge badge-amber">L_task</span>
+        <strong>برای Final Classifier</strong>
+      </div>
+      <div class="code" style="font-size:12px;">L_task = CrossEntropy(species_logits, y_class)</div>
+    </div>
+
+    <div class="card card-accent-red">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+        <span class="badge badge-red">L_consistency</span>
+        <strong>برای Hierarchy Enforcement</strong>
+      </div>
+      <div class="code" style="font-size:12px;">L_consistency = mean( max(0, p_f[child] - p_c[parent])² )
+                برای همه (parent, child) pairs</div>
+      <p style="margin-top:10px; font-size:13px;">این penalize می‌کنه وقتی child از parent بزرگ‌تره:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>حالت</th><th>p_c[head]</th><th>p_f[bill]</th><th>penalty</th></tr></thead>
+          <tbody>
+            <tr><td>سازگار</td><td><code>0.9</code></td><td><code>0.8</code></td><td><code>0</code></td></tr>
+            <tr><td>violation کوچک</td><td><code>0.9</code></td><td><code>0.95</code></td><td><code>(0.05)² = 0.0025</code></td></tr>
+            <tr><td>violation بزرگ</td><td><code>0.1</code></td><td><code>0.9</code></td><td><code>(0.8)² = 0.64</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h3>وزن‌دهی با Uncertainty Weighting</h3>
+    <p>به جای grid search دستی برای λ‌ها، از learnable uncertainty weighting استفاده می‌کنیم:</p>
+    <div class="formula">L = Σᵢ (1/2σᵢ²) · Lᵢ + log(σᵢ)</div>
+    <p><code>σᵢ</code> برای هر task یک learnable parameter هست. مدل خودش یاد می‌گیره هر task چقدر وزن داشته باشه — بدون هیچ hyperparameter دستی.</p>
+  </div>
+
+  <hr>
+
+  <!-- Section 7 -->
+  <div class="section" id="s7">
+    <div class="section-label">بخش هفتم</div>
+    <h2>Training Procedure</h2>
+
+    <h3>Optimizer</h3>
+    <div class="code">AdamW  |  weight_decay = 1e-4
+
+Backbone (ResNet-50):    lr = <span class="c-amber">1e-4</span>   <span class="c-dim">← پایین‌تر، برای حفظ ImageNet features</span>
+Heads و Classifier:      lr = <span class="c-blue">1e-3</span></div>
+
+    <div class="callout callout-amber">
+      <div class="callout-icon">⚠️</div>
+      <div><strong>چرا lr متفاوت؟</strong> اگه backbone با lr بالا fine-tune بشه، ImageNet features از بین می‌رن (Catastrophic Forgetting). Features عمومی مثل edge detection برای تشخیص concepts ضروری هستن.</div>
+    </div>
+
+    <h3>Sequential Training Phases</h3>
+    <p>اگه از اول همه losses با هم فعال باشن، Classifier یاد می‌گیره concepts رو نادیده بگیره. Sequential Training جلوی این رو می‌گیره.</p>
+
+    <div class="phase-grid">
+      <div class="phase-card" style="border-top: 3px solid var(--accent-teal);">
+        <div class="phase-label" style="color: var(--accent-teal);">Phase 1a — Epochs 1–15</div>
+        <div class="phase-title">Backbone FROZEN</div>
+        <div class="phase-desc">فقط <code>L_coarse</code> فعال. مدل یاد می‌گیره parts رو از Feature Map تشخیص بده.</div>
+      </div>
+      <div class="phase-card" style="border-top: 3px solid var(--accent-purple);">
+        <div class="phase-label" style="color: var(--accent-purple);">Phase 1b — Epochs 16–30</div>
+        <div class="phase-title">Backbone FROZEN</div>
+        <div class="phase-desc"><code>L_coarse + L_fine + L_consistency</code> فعال. Fine concepts روی Coarse ثابت می‌شن.</div>
+      </div>
+      <div class="phase-card" style="border-top: 3px solid var(--accent-amber);">
+        <div class="phase-label" style="color: var(--accent-amber);">Phase 2 — Epochs 31–60</div>
+        <div class="phase-title">همه Unfreeze</div>
+        <div class="phase-desc"><code>L_task</code> با warm-up اضافه می‌شه: <code>λ_task(t) = (t-30)/30</code></div>
+      </div>
+      <div class="phase-card" style="border-top: 3px solid var(--accent-green);">
+        <div class="phase-label" style="color: var(--accent-green);">Phase 3 — Epochs 61–100</div>
+        <div class="phase-title">Fine-tuning نهایی</div>
+        <div class="phase-desc">همه losses فعال. Uncertainty Weighting λ‌ها رو تنظیم می‌کنه.</div>
+      </div>
+    </div>
+
+    <h3>Hyperparameters</h3>
+    <div class="code">Batch size:   32
+Epochs:       100  (با early stopping — patience=15 روی val_loss)
+LR Schedule:  Cosine Annealing  یا  ReduceLROnPlateau (patience=5, factor=0.5)</div>
+  </div>
+
+  <hr>
+
+  <!-- Section 8 -->
+  <div class="section" id="s8">
+    <div class="section-label">بخش هشتم</div>
+    <h2>Evaluation</h2>
+
+    <h3>متریک‌های Standard</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>متریک</th><th>توضیح</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Top-1 Accuracy</strong></td><td>روی 200 گونه پرنده (test set)</td></tr>
+          <tr><td><strong>Top-5 Accuracy</strong></td><td>CUB چالش‌برانگیزه، Top-5 هم گزارش کن</td></tr>
+          <tr><td><strong>L1 Concept Accuracy</strong></td><td>میانگین binary accuracy روی 13 coarse concepts</td></tr>
+          <tr><td><strong>L2 Concept F1</strong></td><td>macro-F1 روی 312 attributes — بهتر از accuracy به دلیل imbalance</td></tr>
+          <tr><td><strong>AUROC per concept</strong></td><td>برای هر attribute جداگانه، بعد macro-average</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout callout-blue">
+      <div class="callout-icon">💡</div>
+      <div><strong>چرا AUROC بهتر از Accuracy برای Concepts؟</strong> یک classifier که «همیشه negative» بگه، 98٪ accuracy می‌گیره ولی AUROC = 0.5. AUROC کیفیت ranking رو می‌سنجه و threshold-independent هست.</div>
+    </div>
+
+    <h3>Concept Intervention — Gold Standard</h3>
+    <p>مهم‌ترین متریک CBM evaluation. ثابت می‌کنه concepts واقعاً معنی‌دارن.</p>
+    <p><strong>روش:</strong></p>
+    <ul class="fa-list">
+      <li>مدل concepts رو predict می‌کنه (مثل معمول)</li>
+      <li>درصدی از concepts رو با ground-truth جایگزین کن (inject)</li>
+      <li>Classifier رو روی concepts اصلاح‌شده اجرا کن</li>
+      <li>Accuracy رو اندازه بگیر</li>
+    </ul>
+    <p style="margin-top:10px;"><strong>Intervention rates:</strong> 0٪, 25٪, 50٪, 75٪, 100٪</p>
+    <div class="code" style="direction:ltr; text-align:left;">Accuracy
+  100% │                    ╱── ✅ Concepts معنی‌دارن (slope تند)
+       │                  ╱
+       │              ╱
+   75% │        ╱────── ⚠️ متوسط
+       │  ╱─────────────── ❌ Concepts بی‌معنی (flat)
+       └─────────────────→ Intervention Rate
+       0%   25%  50%  75%  100%</div>
+    <div class="callout callout-blue">
+      <div class="callout-icon">⭐</div>
+      <div><strong>Bonus برای Hierarchical CBM:</strong> Intervention رو جداگانه روی L1 و L2 انجام بده تا نشون بدی hierarchy کار می‌کنه — اگر intervention روی L1، L2 رو هم اصلاح کنه (به خاطر mask)، یعنی hierarchy موثر بوده.</div>
+    </div>
+
+    <h3>Hierarchical Distance — سنجش شدت اشتباه</h3>
+    <p>از taxonomy biological (NABirds) استفاده می‌کنیم:</p>
+    <div class="code" style="direction:ltr; text-align:center;">Aves → Order → Family → Genus → Species</div>
+
+    <p><strong>LCA (Lowest Common Ancestor):</strong> عمیق‌ترین گره مشترک بین دو species در درخت taxonomy.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Prediction</th><th>Ground Truth</th><th>LCA</th><th>Severity</th></tr></thead>
+        <tbody>
+          <tr><td>Acadian Flycatcher</td><td>Acadian Flycatcher</td><td>—</td><td><span class="badge badge-green">درست</span></td></tr>
+          <tr><td>Acadian Flycatcher</td><td>Yellow-bellied Flycatcher</td><td>Tyrannidae (Family)</td><td><span class="badge badge-teal">کم</span></td></tr>
+          <tr><td>Acadian Flycatcher</td><td>Yellow Warbler</td><td>Passeriformes (Order)</td><td><span class="badge badge-amber">متوسط</span></td></tr>
+          <tr><td>Acadian Flycatcher</td><td>Downy Woodpecker</td><td>Aves (Class)</td><td><span class="badge badge-red">زیاد</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>هر چه LCA به ریشه نزدیک‌تر باشه، اشتباه شدیدتره. یک hierarchical CBM باید اشتباهات کم‌شدت‌تری داشته باشه. Source taxonomy: NABirds dataset یا Cornell Lab of Ornithology.</p>
+
+    <h3>Error Localization</h3>
+    <p>برای هر misclassification، تشخیص بده اشتباه از کجا اومده:</p>
+    <ul class="fa-list">
+      <li><strong>L1-failure:</strong> parts درست تشخیص داده نشدن</li>
+      <li><strong>L2-failure:</strong> fine attributes غلط بودن (با وجود parts درست)</li>
+      <li><strong>Both:</strong> هر دو سطح مشکل داشتن</li>
+    </ul>
+
+    <h3>Baselines — برای مقایسه</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>مدل</th><th>توضیح</th></tr></thead>
+        <tbody>
+          <tr><td>ResNet-50 end-to-end</td><td>بدون CBM — upper bound accuracy</td></tr>
+          <tr><td>Flat CBM (Koh et al. 2020)</td><td>فقط L2، بدون L1 و hierarchy</td></tr>
+          <tr><td>Parallel Multi-task</td><td>L1 و L2 هر دو موازی از Feature Map — نشون می‌ده Sequential بهتره</td></tr>
+          <tr><td><strong>Hierarchical CBM (ما)</strong></td><td>معماری Sequential/Masked نهایی</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- Section 9 -->
+  <div class="section" id="s9">
+    <div class="section-label">بخش نهم</div>
+    <h2>خروجی نهایی</h2>
+    <p>مدل برای هر تصویر باید بتونه این رو تولید کنه:</p>
+
+    <div class="output-box">
+      <div class="output-row">
+        <div class="output-row-label">سطح ۱ — Parts (Coarse)</div>
+        <div class="concept-tags">
+          <div class="ctag">سر ✅ <span class="prob">0.92</span></div>
+          <div class="ctag">بدن ✅ <span class="prob">0.87</span></div>
+          <div class="ctag">بال ✅ <span class="prob">0.81</span></div>
+          <div class="ctag">پا ✅ <span class="prob">0.74</span></div>
+        </div>
+      </div>
+      <div class="output-row">
+        <div class="output-row-label">سطح ۲ — Attributes (Fine)</div>
+        <div class="concept-tags">
+          <div class="ctag">bill_shape_dagger ✅ <span class="prob">0.89</span></div>
+          <div class="ctag">wing_color_brown ✅ <span class="prob">0.83</span></div>
+          <div class="ctag">breast_pattern_streaked ✅ <span class="prob">0.76</span></div>
+        </div>
+      </div>
+      <div class="output-row" style="background: var(--surface2);">
+        <div class="output-row-label">💬 استدلال مدل</div>
+        <p style="margin:0; font-size:14px; color: var(--text-dim);">«سر، بدن، و بال کوچک داشت <span style="opacity:0.6">(سطح کلی)</span> + منقار خنجری‌شکل و بال قهوه‌ای <span style="opacity:0.6">(سطح جزئی)</span>»</p>
+      </div>
+      <div class="output-row">
+        <div class="result-final">🐦 Acadian Flycatcher</div>
+      </div>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- Section 10 -->
+  <div class="section" id="s10">
+    <div class="section-label">بخش دهم</div>
+    <h2>خلاصه مفاهیم کلیدی</h2>
+
+    <div class="card">
+      <div class="glossary">
+        <div class="glossary-item">
+          <div class="glossary-term">CBM</div>
+          <div class="glossary-def">مدلی که prediction رو از طریق concepts انجام می‌ده — نه مستقیم از features. همه اطلاعات از bottleneck concepts عبور می‌کنن.</div>
+        </div>
+        <div class="glossary-item">
+          <div class="glossary-term">Bottleneck Property</div>
+          <div class="glossary-def">Classifier فقط از concepts می‌خونه، نه از Feature Map. بدون این property، توضیحات concepts قابل اعتماد نیستن.</div>
+        </div>
+        <div class="glossary-item">
+          <div class="glossary-term">Masked Fine Head</div>
+          <div class="glossary-def"><code>p_f[i] = σ(z_f[i]) × p_c[parent(i)]</code> — child نمی‌تونه از parent بزرگ‌تر باشه. Hard constraint در معماری.</div>
+        </div>
+        <div class="glossary-item">
+          <div class="glossary-term">is-a Relation</div>
+          <div class="glossary-def">رابطه سلسله‌مراتبی: <code>bill</code> is-a part of <code>head</code>. این رابطه رو از parsing attribute names در CUB می‌سازیم.</div>
+        </div>
+        <div class="glossary-item">
+          <div class="glossary-term">Focal Loss</div>
+          <div class="glossary-def"><code>-(1-p_t)^γ log(p_t)</code> — روی examples سخت focus می‌کنه. برای class imbalance شدید در 312 attribute. پیشنهاد: α=0.25, γ=2</div>
+        </div>
+        <div class="glossary-item">
+          <div class="glossary-term">Consistency Loss</div>
+          <div class="glossary-def"><code>max(0, p_child - p_parent)²</code> — soft constraint برای hierarchy. فقط در training اعمال می‌شه (برخلاف Masked Head که hard constraint هست).</div>
+        </div>
+        <div class="glossary-item">
+          <div class="glossary-term">Uncertainty Weighting</div>
+          <div class="glossary-def"><code>Σ (1/2σ²)Lᵢ + log(σ)</code> — λ‌های learnable به جای grid search. مدل خودش وزن هر task رو یاد می‌گیره.</div>
+        </div>
+        <div class="glossary-item">
+          <div class="glossary-term">Concept Intervention</div>
+          <div class="glossary-def">inject کردن ground-truth concepts در test time. اگه accuracy بره بالا، concepts معنی‌دارن. Gold standard evaluation برای CBMs.</div>
+        </div>
+        <div class="glossary-item">
+          <div class="glossary-term">LCA</div>
+          <div class="glossary-def">Lowest Common Ancestor در taxonomy درخت. برای سنجش شدت اشتباه — اشتباه گرفتن گونه‌های نزدیک بهتر از گونه‌های دور است.</div>
+        </div>
+        <div class="glossary-item">
+          <div class="glossary-term">AUROC</div>
+          <div class="glossary-def">Threshold-independent metric. برای ارزیابی concept quality بهتر از accuracy — robust به class imbalance.</div>
+        </div>
+        <div class="glossary-item">
+          <div class="glossary-term">Sequential Training</div>
+          <div class="glossary-def">اول concepts یاد بگیر، بعد task. جلوی bypass شدن concepts رو می‌گیره. اگه همه losses از اول فعال باشن، classifier concepts رو نادیده می‌گیره.</div>
+        </div>
+        <div class="glossary-item" style="border-bottom:none;">
+          <div class="glossary-term">Catastrophic Forgetting</div>
+          <div class="glossary-def">از دست رفتن ImageNet features در fine-tuning با lr بالا. راه‌حل: lr پایین‌تر برای backbone (1e-4) + Gradual Unfreezing.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- Section 11 -->
+  <div class="section" id="s11">
+    <div class="section-label">بخش یازدهم</div>
+    <h2>References</h2>
+
+    <div class="ref-list">
+      <div class="ref-item">
+        <div class="ref-num">1</div>
+        <div class="ref-content">
+          <div class="ref-title">Bertinetto et al. — "Making Better Mistakes: Leveraging Class Hierarchies with Deep Networks" — CVPR 2020</div>
+          <div class="ref-role">Hierarchical Distance metric — سنجش شدت اشتباه</div>
+        </div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-num">2</div>
+        <div class="ref-content">
+          <div class="ref-title">Hase et al. — "Interpretable Image Recognition with Hierarchical Prototypes" — AAAI 2019</div>
+          <div class="ref-role">معماری سلسله‌مراتبی — یکی از مراجع اصلی پروژه</div>
+        </div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-num">3</div>
+        <div class="ref-content">
+          <div class="ref-title">Pittino et al. — "Hierarchical Concept Bottleneck Models for Vision" — EAAI 2023</div>
+          <div class="ref-role">نزدیک‌ترین کار به ما — baseline مستقیم</div>
+        </div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-num">4</div>
+        <div class="ref-content">
+          <div class="ref-title">Poeta et al. — "Concept-based Explainable Artificial Intelligence: A Survey" — ACM Comput. Surv. 2025</div>
+          <div class="ref-role">مرجع اصلی — یکی از نویسندگان استاد راهنمای پروژه</div>
+        </div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-num">5</div>
+        <div class="ref-content">
+          <div class="ref-title">Sun et al. — "Boosting CBMs with Supervised, Hierarchical Concept Learning" — Under Review</div>
+          <div class="ref-role">Sequential training + hierarchical supervision</div>
+        </div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-num">6</div>
+        <div class="ref-content">
+          <div class="ref-title">Koh et al. — "Concept Bottleneck Models" — ICML 2020</div>
+          <div class="ref-role">مقاله اصلی CBM — پایه همه چیز + Concept Intervention</div>
+        </div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-num">7</div>
+        <div class="ref-content">
+          <div class="ref-title">Lin et al. — "Focal Loss for Dense Object Detection" — ICCV 2017</div>
+          <div class="ref-role">Focal Loss برای class imbalance در attributes</div>
+        </div>
+      </div>
+      <div class="ref-item">
+        <div class="ref-num">8</div>
+        <div class="ref-content">
+          <div class="ref-title">Kendall et al. — "Multi-Task Learning Using Uncertainty to Weigh Losses" — CVPR 2018</div>
+          <div class="ref-role">Uncertainty Weighting برای λ tuning</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    P1 — Hierarchical Concept-Based Explainable-by-Design Models &nbsp;·&nbsp;
+    Explainable and Trustworthy AI — Politecnico di Torino 2025/2026
+  </div>
+
+</div>
+</body>
+</html>
