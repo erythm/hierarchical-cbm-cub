@@ -1,6 +1,6 @@
 # Hierarchical Concept Bottleneck Model for Bird Classification
 
-**Explainable and Trustworthy AI — Politecnico di Torino 2026**
+**Explainable and Trustworthy AI — Politecnico di Torino 2025/2026**
 **Project P1 — Hierarchical Concept-Based Explainable-by-Design Models**
 
 ---
@@ -12,12 +12,12 @@ This project implements a **Hierarchical Concept Bottleneck Model (H-CBM)** for 
 Unlike standard black-box classifiers, H-CBM expresses every prediction through two levels of human-understandable concepts:
 
 ```
-Image → [bill ✅  wing ✅  tail ✅]        ← Level 1: body parts
-      → [bill_shape_dagger ✅  wing_color_brown ✅  ...] ← Level 2: fine attributes
+Image → [bill ✅  wing ✅  tail ✅]                      ← Level 1: body parts (13)
+      → [bill_shape_dagger ✅  wing_color_brown ✅  ...]  ← Level 2: fine attributes (312)
       → Acadian Flycatcher 🐦
 ```
 
-A key architectural constraint — the **Masked Fine Head** — ensures that if a body part is predicted absent, none of its child attributes can be active. This enforces a hard hierarchical consistency at both training and inference time.
+A key architectural constraint — the **Masked Fine Head** — ensures that if a body part is predicted absent, none of its child attributes can be active. This enforces hard hierarchical consistency at both training and inference time.
 
 ---
 
@@ -58,8 +58,7 @@ Linear(2048→512)→ReLU→Dropout(0.3)   │
 | ----------------------- | --------------------------------------------------------------------- |
 | **Masked Fine Head**    | `p_f[i] = σ(z_f[i]) × p_c[parent(i)]` — hard architectural constraint |
 | **Bottleneck Property** | Classifier reads only from `p_f`, never from raw features             |
-| **L1 from parsing**     | Coarse concepts derived from attribute name structure, not hardcoded  |
-| **Sequential Training** | Concepts are learned before task loss is introduced                   |
+| **L1 from parsing**     | 13 coarse concepts derived by parsing attribute names, not hardcoded  |
 
 ---
 
@@ -73,25 +72,23 @@ Linear(2048→512)→ReLU→Dropout(0.3)   │
 | Val   | ~600 (10% stratified from train) |
 | Test  | 5,794                            |
 
-**Two annotation levels used:**
+**Two annotation levels:**
 
-- **L1 (13 coarse parts):** derived by parsing 312 attribute names → `bill, wing, tail, breast, belly, leg, eye, throat, forehead, nape, crown, back, head`
+- **L1 (13 coarse parts):** derived by parsing 312 attribute names → `back, belly, bill, breast, crown, eye, forehead, head, leg, nape, tail, throat, wing`
 - **L2 (312 fine attributes):** binary attributes filtered by `certainty ≥ 3`
 
-Download the dataset:
+Download:
 
 - [CUB-200-2011 (1.2 GB)](https://data.caltech.edu/records/65de6-vp158)
-- [Segmentation masks (39 MB)](https://data.caltech.edu/records/w9d68-gec53) — for XAI evaluation only
+- [Segmentation masks (39 MB)](https://data.caltech.edu/records/w9d68-gec53) — XAI evaluation only
 
-Place them under:
+Place on Google Drive:
 
 ```
-DB/
-└── DB1/
-    ├── CUB_200_2011/
-    │   └── CUB_200_2011/     ← images + annotations (double-nested)
-    └── DB1-Mask/
-        └── segmentations/    ← XAI evaluation only
+xai_dataset/
+├── CUB_200_2011/
+│   └── CUB_200_2011/     ← images + annotations (double-nested)
+└── segmentations/         ← XAI evaluation only
 ```
 
 ---
@@ -102,13 +99,13 @@ DB/
 # Clone the repo
 git clone https://github.com/erythm/hierarchical-cbm-cub.git
 cd hierarchical-cbm-cub
+```
 
-# Create virtual environment
+Local setup:
+
+```bash
 python -m venv .venv
-source .venv/bin/activate        # Linux/Mac
-# .venv\Scripts\activate         # Windows
-
-# Install dependencies
+source .venv/bin/activate
 pip install torch torchvision pillow matplotlib numpy scikit-learn
 ```
 
@@ -118,53 +115,44 @@ pip install torch torchvision pillow matplotlib numpy scikit-learn
 
 ```
 hierarchical-cbm-cub/
-├── DB/                          ← dataset (not tracked by git)
-│   └── DB1/
-│       ├── CUB_200_2011/
-│       │   └── CUB_200_2011/
-│       └── DB1-Mask/
-├── src/                         ← Python modules (future)
-├── data.ipynb                   ← data pipeline ✅
-├── model.ipynb                  ← model definition ⚠️
-├── CLAUDE.md                    ← Claude Code guidance
+├── src/          ← Python modules (future)
+├── data.ipynb    ← data pipeline ✅
+├── model.ipynb   ← model definition ⚠️
+├── CLAUDE.md     ← Claude Code guidance
 └── README.md
 ```
+
+Dataset lives on Google Drive — not tracked by git.
 
 ---
 
 ## Loss Function
 
 ```
-L_total = λ_c · L_coarse + λ_f · L_fine + λ_cls · L_task + λ_h · L_consistency
+L_total = λ_c · L_coarse + λ_f · L_fine + λ_cls · L_task
 ```
 
-| Term            | Details                                                  |
-| --------------- | -------------------------------------------------------- |
-| `L_coarse`      | Weighted BCE on L1 — masked by part visibility           |
-| `L_fine`        | Focal Loss (α=0.25, γ=2) on L2 — masked by certainty ≥ 3 |
-| `L_task`        | Cross-entropy on 200 species                             |
-| `L_consistency` | `mean(max(0, p_f[child] - p_c[parent])²)`                |
+| Term       | Details                                                  |
+| ---------- | -------------------------------------------------------- |
+| `L_coarse` | Weighted BCE on L1 — masked by part visibility           |
+| `L_fine`   | Focal Loss (α=0.25, γ=2) on L2 — masked by certainty ≥ 3 |
+| `L_task`   | Cross-entropy on 200 species                             |
 
-Lambda weights are learned automatically via **Uncertainty Weighting** (Kendall et al. 2018).
+λ weights are fixed: `λ_c=0.5, λ_f=0.5, λ_cls=1.0`
 
 ---
 
 ## Training
 
-Sequential training prevents the classifier from bypassing concepts:
-
-| Phase | Epochs | Backbone | Active Losses                       |
-| ----- | ------ | -------- | ----------------------------------- |
-| 1a    | 1–15   | Frozen   | `L_coarse` only                     |
-| 1b    | 16–30  | Frozen   | `L_coarse + L_fine + L_consistency` |
-| 2     | 31–60  | Unfrozen | All — `L_task` with warm-up         |
-| 3     | 61–100 | Unfrozen | All — final fine-tuning             |
+Single training loop — all losses active from the start:
 
 ```
-Optimizer:  AdamW (weight_decay=1e-4)
-Backbone:   lr = 1e-4
-Heads:      lr = 1e-3
-Epochs:     100 with early stopping (patience=15)
+Optimizer:      AdamW (weight_decay=1e-4)
+Backbone lr:    1e-4  ← lower to preserve ImageNet features
+Heads lr:       1e-3
+Batch size:     32
+Epochs:         50 with early stopping (patience=10 on val_loss)
+LR schedule:    ReduceLROnPlateau (patience=5, factor=0.5)
 ```
 
 ---
@@ -180,31 +168,29 @@ Epochs:     100 with early stopping (patience=15)
 
 ### Hierarchy-Aware Metrics
 
-- **Concept Intervention** — inject ground-truth concepts at [0%, 25%, 50%, 75%, 100%] and measure accuracy. Steep slope = meaningful concepts.
-- **Hierarchical Distance** — measure LCA depth of mistakes using biological taxonomy (NABirds). Model should make semantically closer mistakes.
+- **Concept Intervention** — inject ground-truth concepts at [0%, 25%, 50%, 75%, 100%]. Steep accuracy slope = meaningful concepts.
+- **Hierarchical Distance** — LCA depth of mistakes using biological taxonomy. Model should confuse semantically similar species.
 - **Error Localization** — classify each mistake as L1-failure, L2-failure, or Both.
-- **Hierarchy Consistency Rate** — fraction of predictions violating `p_f[child] ≤ p_c[parent]`.
 
 ### Baselines
 
-| Model                | Description                              |
-| -------------------- | ---------------------------------------- |
-| ResNet-50 end-to-end | No CBM — accuracy upper bound            |
-| Flat CBM             | Only L2, no hierarchy (Koh et al. 2020)  |
-| Parallel multi-task  | L1 and L2 both from Feature Map, no mask |
-| **H-CBM (ours)**     | Sequential/Masked Hierarchical CBM       |
+| Model                      | Description                              |
+| -------------------------- | ---------------------------------------- |
+| ResNet-50 end-to-end       | No CBM — accuracy upper bound            |
+| Flat CBM (Koh et al. 2020) | Only L2, no hierarchy                    |
+| Parallel multi-task        | L1 and L2 both from Feature Map, no mask |
+| **H-CBM (ours)**           | Masked Hierarchical CBM                  |
 
 ---
 
 ## Implementation Status
 
-| Component        | File              | Status         |
-| ---------------- | ----------------- | -------------- |
-| Data pipeline    | `data.ipynb`      | ✅ Complete    |
-| Model definition | `model.ipynb`     | ⚠️ In progress |
-| Loss functions   | `src/loss.py`     | ❌ Pending     |
-| Training loop    | `src/train.py`    | ❌ Pending     |
-| Evaluation       | `src/evaluate.py` | ❌ Pending     |
+| Component        | File             | Status         |
+| ---------------- | ---------------- | -------------- |
+| Data pipeline    | `data.ipynb`     | ✅ Complete    |
+| Model definition | `model.ipynb`    | ⚠️ In progress |
+| Loss + Training  | `train.ipynb`    | ❌ Pending     |
+| Evaluation       | `evaluate.ipynb` | ❌ Pending     |
 
 ---
 
@@ -219,4 +205,3 @@ Epochs:     100 with early stopping (patience=15)
 | [5] | Bertinetto et al. — _Making Better Mistakes_ — CVPR 2020                                 |
 | [6] | Hase et al. — _Interpretable Image Recognition with Hierarchical Prototypes_ — AAAI 2019 |
 | [7] | Lin et al. — _Focal Loss for Dense Object Detection_ — ICCV 2017                         |
-| [8] | Kendall et al. — _Multi-Task Learning Using Uncertainty to Weigh Losses_ — CVPR 2018     |
