@@ -185,12 +185,13 @@ LR schedule:    ReduceLROnPlateau (patience=5, factor=0.5)
 
 ## Implementation Status
 
-| Component        | File             | Status         |
-| ---------------- | ---------------- | -------------- |
-| Data pipeline    | `data.ipynb`     | ✅ Complete    |
-| Model definition | `model.ipynb`    | ⚠️ In progress |
-| Loss + Training  | `train.ipynb`    | ❌ Pending     |
-| Evaluation       | `evaluate.ipynb` | ❌ Pending     |
+| Component        | File             | Status      |
+| ---------------- | ---------------- | ----------- |
+| Data pipeline    | `data.ipynb`     | ✅ Complete |
+| Model definition | `model.ipynb`    | ✅ Complete |
+| Loss + Training  | `train.ipynb`    | ❌ Pending  |
+| Evaluation       | `evaluate.ipynb` | ❌ Pending  |
+| XAI Analysis     | `xai.ipynb`      | ❌ Pending  |
 
 ---
 
