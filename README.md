@@ -222,7 +222,8 @@ GradCAM computed with respect to each L1 concept neuron (p_c[i]) instead of the 
 
 ### GradCAM Visualizations
 
-![GradCAM](plots/gradcam_visualizations.png)
+![GradCAM](plots/GradCAM_visualizations.png)
+![GradCAM](plots/GradCAM_visualizations2.png)
 
 ### Concept-Level GradCAM
 
