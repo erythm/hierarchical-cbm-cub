@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HierarchicalCBM — ViT-B/16 Architecture</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d1117;--surface:#161b22;--surface2:#1c2333;--border:#21262d;
+  --text:#c9d1d9;--muted:#6e7681;
+  --blue:#58a6ff;--purple:#bc8cff;--green:#3fb950;
+  --orange:#f0883e;--pink:#f778ba;--gold:#e3b341;--red:#f85149;--teal:#39d353;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Vazirmatn',sans-serif;line-height:1.75;min-height:100vh;}
+.page{max-width:900px;margin:0 auto;padding:52px 24px 80px;}
+
+.hero{text-align:center;margin-bottom:48px;}
+.hero-tag{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;color:var(--muted);background:var(--surface);border:1px solid var(--border);padding:4px 14px;border-radius:20px;margin-bottom:16px;text-transform:uppercase;}
+.hero-badge{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;color:var(--teal);background:color-mix(in srgb,var(--teal) 8%,transparent);border:1px solid color-mix(in srgb,var(--teal) 30%,transparent);padding:3px 10px;border-radius:20px;margin-bottom:8px;text-transform:uppercase;margin-right:8px;}
+.hero h1{font-size:28px;font-weight:700;color:#f0f6fc;margin-bottom:8px;}
+.hero p{font-size:13px;color:var(--muted);max-width:540px;margin:0 auto;}
+
+/* ── Arch diagram ── */
+.arch-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  overflow:hidden;margin-bottom:40px;}
+.arch-card-header{padding:14px 20px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;}
+.arch-card-title{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);}
+.arch-svg-wrap{padding:20px;overflow-x:auto;display:flex;justify-content:center;}
+
+/* ── Steps ── */
+.step{border-right:2px solid var(--border);padding-right:24px;margin-right:8px;}
+.flow{display:flex;align-items:stretch;gap:14px;direction:ltr;border:1px solid var(--border);
+  border-radius:10px 10px 0 0;background:var(--surface);overflow:hidden;}
+.inputs-side{display:flex;flex-direction:column;min-width:248px;border-left:1px solid var(--border);}
+.inp-block{flex:1;padding:13px 15px;border-bottom:1px solid var(--border);}
+.inp-block:last-child{border-bottom:none;}
+.inp-name{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px;}
+.inp-shape{font-family:'IBM Plex Mono',monospace;font-size:9.5px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 9px;color:#5a7a95;direction:ltr;text-align:left;display:inline-block;}
+.inp-detail{font-size:9.5px;color:var(--muted);margin-top:5px;font-family:'IBM Plex Mono',monospace;}
+.arrow-col{display:flex;align-items:center;justify-content:center;padding:0 6px;flex-shrink:0;color:var(--muted);font-size:20px;}
+.outputs-side{flex:1;display:flex;flex-direction:column;justify-content:center;padding:14px;gap:9px;}
+.v-chip{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;padding:6px 14px;border-radius:20px;border:1px solid;display:inline-block;align-self:flex-start;}
+.v-type{font-size:9px;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-top:2px;}
+.v-usage{font-size:9.5px;color:var(--red);font-family:'IBM Plex Mono',monospace;margin-top:3px;direction:rtl;}
+.desc{padding:16px 20px 18px;background:var(--surface2);border:1px solid var(--border);border-top:none;border-radius:0 0 10px 10px;font-size:13px;color:#8b949e;}
+.desc p{margin-bottom:9px;}.desc p:last-child{margin-bottom:0;}
+.desc b{color:var(--text);font-weight:600;}
+.desc code{font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--surface);border:1px solid var(--border);padding:1px 6px;border-radius:4px;}
+.note{border-right:3px solid;border-radius:0 6px 6px 0;padding:8px 12px;margin:9px 0;font-size:12px;}
+.note b{font-weight:600;}
+.formula{font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--surface);border:1px solid var(--border);padding:8px 12px;border-radius:5px;color:#7a90aa;direction:ltr;text-align:left;margin:8px 0;}
+
+.connector{display:flex;align-items:center;padding:12px 0;margin-right:8px;padding-right:24px;color:var(--muted);font-size:10px;font-family:'IBM Plex Mono',monospace;}
+.conn-line{width:2px;height:26px;background:var(--border);margin-right:-25px;margin-left:12px;flex-shrink:0;}
+
+/* Freeze badge */
+.freeze-badge{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:8px;font-weight:700;letter-spacing:.06em;padding:2px 8px;border-radius:3px;border:1px solid;margin-top:4px;text-transform:uppercase;}
+.freeze-badge.frozen{color:#f0883e;border-color:color-mix(in srgb,#f0883e 40%,transparent);background:color-mix(in srgb,#f0883e 8%,transparent);}
+.freeze-badge.active{color:#3fb950;border-color:color-mix(in srgb,#3fb950 40%,transparent);background:color-mix(in srgb,#3fb950 8%,transparent);}
+
+/* Final */
+.final-block{margin-top:8px;background:linear-gradient(135deg,color-mix(in srgb,var(--teal) 5%,var(--surface)),var(--surface));border:1px solid color-mix(in srgb,var(--teal) 30%,transparent);border-radius:10px;padding:22px 24px;}
+.final-title{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);margin-bottom:14px;}
+.code-block{font-family:'IBM Plex Mono',monospace;font-size:10.5px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:12px 14px;line-height:1.9;color:#8b949e;direction:ltr;text-align:left;overflow-x:auto;}
+.code-block .c{color:#3d5268;}.code-block .k{color:var(--teal);}.code-block .n{color:var(--orange);}
+
+/* Phase guide table */
+.phase-table{width:100%;border-collapse:collapse;margin:16px 0;font-size:12px;}
+.phase-table th{background:var(--surface2);color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:8px 12px;border:1px solid var(--border);text-align:center;}
+.phase-table td{padding:8px 12px;border:1px solid var(--border);font-family:'IBM Plex Mono',monospace;font-size:10px;text-align:center;vertical-align:middle;}
+
+/* colors */
+.gold  {color:var(--gold);  border-color:color-mix(in srgb,var(--gold)  45%,transparent);background:color-mix(in srgb,var(--gold)  9%,transparent);}
+.blue  {color:var(--blue);  border-color:color-mix(in srgb,var(--blue)  45%,transparent);background:color-mix(in srgb,var(--blue)  9%,transparent);}
+.purple{color:var(--purple);border-color:color-mix(in srgb,var(--purple)45%,transparent);background:color-mix(in srgb,var(--purple)9%,transparent);}
+.green {color:var(--green); border-color:color-mix(in srgb,var(--green) 45%,transparent);background:color-mix(in srgb,var(--green) 9%,transparent);}
+.orange{color:var(--orange);border-color:color-mix(in srgb,var(--orange)45%,transparent);background:color-mix(in srgb,var(--orange)9%,transparent);}
+.pink  {color:var(--pink);  border-color:color-mix(in srgb,var(--pink)  45%,transparent);background:color-mix(in srgb,var(--pink)  9%,transparent);}
+.teal  {color:var(--teal);  border-color:color-mix(in srgb,var(--teal)  45%,transparent);background:color-mix(in srgb,var(--teal)  9%,transparent);}
+.note.blue  {border-color:var(--blue);  background:color-mix(in srgb,var(--blue)  5%,transparent);color:#8b949e;}
+.note.purple{border-color:var(--purple);background:color-mix(in srgb,var(--purple)5%,transparent);color:#8b949e;}
+.note.green {border-color:var(--green); background:color-mix(in srgb,var(--green) 5%,transparent);color:#8b949e;}
+.note.orange{border-color:var(--orange);background:color-mix(in srgb,var(--orange)5%,transparent);color:#8b949e;}
+.note.pink  {border-color:var(--pink);  background:color-mix(in srgb,var(--pink)  5%,transparent);color:#8b949e;}
+.note.teal  {border-color:var(--teal);  background:color-mix(in srgb,var(--teal)  5%,transparent);color:#8b949e;}
+.box-ref{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:8.5px;
+  font-weight:700;padding:2px 8px;border-radius:3px;border:1px solid;
+  margin-top:6px;letter-spacing:.06em;}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="hero">
+  <div>
+    <span class="hero-tag">03_ViT-B16_train.ipynb</span>
+    <span class="hero-badge">✦ Updated Architecture</span>
+  </div>
+  <h1>HierarchicalCBM — ViT-B/16</h1>
+  <p>Concept Bottleneck Model سلسله‌مراتبی با backbone Vision Transformer — تصویر به ۱۹۶ patch تقسیم می‌شود · attention کلی · feature 768تایی</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- ARCHITECTURE DIAGRAM                                 -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="arch-card">
+  <div class="arch-card-header">
+    <div class="arch-card-title">▸ معماری کامل مدل — HierarchicalCBM (ViT-B/16 Backbone)</div>
+  </div>
+  <div class="arch-svg-wrap">
+
+<svg viewBox="0 0 860 980" width="860" height="980" xmlns="http://www.w3.org/2000/svg" style="font-family:'IBM Plex Mono',monospace">
+<defs>
+  <marker id="ah-b"  markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#58a6ff"/></marker>
+  <marker id="ah-t"  markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#39d353"/></marker>
+  <marker id="ah-p"  markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#bc8cff"/></marker>
+  <marker id="ah-g"  markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#3fb950"/></marker>
+  <marker id="ah-o"  markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#f0883e"/></marker>
+  <marker id="ah-pk" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#f778ba"/></marker>
+  <marker id="ah-m"  markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#6e7681"/></marker>
+</defs>
+
+<!-- background -->
+<rect width="860" height="980" fill="#161b22" rx="0"/>
+
+<!-- subtle section backgrounds -->
+<!-- ViT backbone region -->
+<rect x="270" y="28" width="320" height="350" rx="10" fill="rgba(57,211,83,0.04)" stroke="rgba(57,211,83,0.09)" stroke-width="1"/>
+<!-- coarse / fine head region -->
+<rect x="75" y="395" width="210" height="210" rx="10" fill="rgba(188,140,255,0.04)" stroke="rgba(188,140,255,0.08)" stroke-width="1"/>
+<rect x="555" y="395" width="210" height="210" rx="10" fill="rgba(63,185,80,0.04)"   stroke="rgba(63,185,80,0.08)"  stroke-width="1"/>
+<!-- masked region -->
+<rect x="280" y="630" width="300" height="62"  rx="10" fill="rgba(240,136,62,0.05)"  stroke="rgba(240,136,62,0.1)" stroke-width="1"/>
+<!-- classifier region -->
+<rect x="290" y="720" width="280" height="220" rx="10" fill="rgba(247,120,186,0.04)" stroke="rgba(247,120,186,0.08)" stroke-width="1"/>
+
+<!-- left side section labels -->
+<text x="20" y="68"  font-size="9" fill="#39d353" opacity="0.6" font-weight="600">① INPUT</text>
+<text x="20" y="195" font-size="9" fill="#39d353" opacity="0.6" font-weight="600">② PATCHES</text>
+<text x="20" y="295" font-size="9" fill="#39d353" opacity="0.6" font-weight="600">③ ATTN</text>
+<text x="20" y="385" font-size="9" fill="#39d353" opacity="0.6" font-weight="600">④ [CLS]</text>
+<text x="20" y="455" font-size="9" fill="#bc8cff" opacity="0.6" font-weight="600">⑤ COARSE</text>
+<text x="20" y="555" font-size="9" fill="#bc8cff" opacity="0.6" font-weight="600">⑥ p_c</text>
+<text x="20" y="655" font-size="9" fill="#f0883e" opacity="0.6" font-weight="600">⑦ MASKED</text>
+<text x="20" y="760" font-size="9" fill="#f778ba" opacity="0.6" font-weight="600">⑧ CLASSIFY</text>
+<text x="20" y="860" font-size="9" fill="#f778ba" opacity="0.6" font-weight="600">⑨ OUTPUT</text>
+
+<!-- ═══ ARROWS ═══ -->
+
+<!-- 1. image → patch embed -->
+<path d="M 430 92 L 430 140" stroke="#39d353" stroke-width="1.5" fill="none" marker-end="url(#ah-t)" opacity="0.65"/>
+
+<!-- 2. patch embed → self-attention transformer -->
+<path d="M 430 202 L 430 250" stroke="#39d353" stroke-width="1.5" fill="none" marker-end="url(#ah-t)" opacity="0.65"/>
+
+<!-- 3. transformer → CLS token -->
+<path d="M 430 308 L 430 358" stroke="#39d353" stroke-width="1.5" fill="none" marker-end="url(#ah-t)" opacity="0.65"/>
+
+<!-- 4. CLS → coarse_head (left-diagonal) -->
+<path d="M 380 404 C 380 438, 180 438, 180 454" stroke="#bc8cff" stroke-width="1.5" fill="none" marker-end="url(#ah-p)" opacity="0.65"/>
+
+<!-- 5. CLS → fine_head (right-diagonal) -->
+<path d="M 480 404 C 480 438, 660 438, 660 454" stroke="#3fb950" stroke-width="1.5" fill="none" marker-end="url(#ah-g)" opacity="0.65"/>
+
+<!-- 6. coarse_head → p_c -->
+<path d="M 180 504 L 180 554" stroke="#bc8cff" stroke-width="1.5" fill="none" marker-end="url(#ah-p)" opacity="0.65"/>
+
+<!-- 7. p_c → fine_head (dashed concat) -->
+<path d="M 258 576 C 450 576, 450 478, 578 478" stroke="#bc8cff" stroke-width="1.5" fill="none" marker-end="url(#ah-p)" opacity="0.55" stroke-dasharray="5,3"/>
+
+<!-- 8. fine_head → p_f_raw -->
+<path d="M 660 504 L 660 554" stroke="#3fb950" stroke-width="1.5" fill="none" marker-end="url(#ah-g)" opacity="0.65"/>
+
+<!-- 9. p_c → masked fine head -->
+<path d="M 208 600 C 208 640, 308 640, 308 652" stroke="#f0883e" stroke-width="1.5" fill="none" marker-end="url(#ah-o)" opacity="0.65"/>
+
+<!-- 10. p_f_raw → masked fine head -->
+<path d="M 635 600 C 635 640, 552 640, 552 652" stroke="#f0883e" stroke-width="1.5" fill="none" marker-end="url(#ah-o)" opacity="0.65"/>
+
+<!-- 11. masked → classifier -->
+<path d="M 430 698 L 430 740" stroke="#f778ba" stroke-width="1.5" fill="none" marker-end="url(#ah-pk)" opacity="0.65"/>
+
+<!-- 12. classifier → cls_logits -->
+<path d="M 430 800 L 430 848" stroke="#f778ba" stroke-width="1.5" fill="none" marker-end="url(#ah-pk)" opacity="0.65"/>
+
+<!-- ═══ NODES ═══ -->
+
+<!-- image -->
+<circle cx="360" cy="60" r="9" fill="#39d353" opacity="0.9"/>
+<text x="360" y="64" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">1</text>
+<rect x="320" y="46" width="220" height="46" rx="10" fill="rgba(57,211,83,0.09)" stroke="#39d353" stroke-width="1.5" stroke-opacity="0.75"/>
+<text x="430" y="65" text-anchor="middle" font-size="11" font-weight="700" fill="#39d353">image</text>
+<text x="430" y="80" text-anchor="middle" font-size="8.5" fill="#39d353" opacity="0.5">(B, 3, 384, 384)</text>
+
+<!-- patch embed -->
+<circle cx="313" cy="154" r="9" fill="#39d353" opacity="0.9"/>
+<text x="313" y="158" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">2</text>
+<rect x="295" y="140" width="270" height="62" rx="10" fill="rgba(57,211,83,0.07)" stroke="#39d353" stroke-width="1.5" stroke-opacity="0.6"/>
+<text x="430" y="162" text-anchor="middle" font-size="10.5" font-weight="700" fill="#39d353">Patch Embedding</text>
+<text x="430" y="178" text-anchor="middle" font-size="8" fill="#39d353" opacity="0.55">384×384 → 196 patches × 16×16px → tokens(768)</text>
+<text x="430" y="192" text-anchor="middle" font-size="7.5" fill="#39d353" opacity="0.4">+ positional embedding</text>
+
+<!-- self-attention transformer -->
+<circle cx="299" cy="264" r="9" fill="#39d353" opacity="0.9"/>
+<text x="299" y="268" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">3</text>
+<rect x="281" y="250" width="298" height="58" rx="10" fill="rgba(57,211,83,0.07)" stroke="#39d353" stroke-width="1.5" stroke-opacity="0.6"/>
+<text x="430" y="271" text-anchor="middle" font-size="10.5" font-weight="700" fill="#39d353">Transformer Encoder</text>
+<text x="430" y="287" text-anchor="middle" font-size="8" fill="#39d353" opacity="0.55">12 layers · Multi-Head Self-Attention · each patch attends to all 196</text>
+<text x="430" y="300" text-anchor="middle" font-size="7.5" fill="#39d353" opacity="0.4">SWAG_E2E_V1 weights · freeze in P1a/P1b/P2 · unfreeze P3</text>
+
+<!-- CLS token -->
+<circle cx="347" cy="372" r="9" fill="#39d353" opacity="0.9"/>
+<text x="347" y="376" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">4</text>
+<rect x="329" y="358" width="202" height="46" rx="23" fill="rgba(57,211,83,0.17)" stroke="#39d353" stroke-width="2" stroke-opacity="0.9"/>
+<text x="430" y="377" text-anchor="middle" font-size="12" font-weight="700" fill="#39d353">features</text>
+<text x="430" y="392" text-anchor="middle" font-size="8.5" fill="#39d353" opacity="0.6">(B, 768)  ·  [CLS] token</text>
+
+<!-- coarse_head -->
+<circle cx="118" cy="468" r="9" fill="#bc8cff" opacity="0.9"/>
+<text x="118" y="472" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">5</text>
+<rect x="100" y="454" width="160" height="50" rx="10" fill="rgba(188,140,255,0.09)" stroke="#bc8cff" stroke-width="1.5" stroke-opacity="0.75"/>
+<text x="180" y="473" text-anchor="middle" font-size="10.5" font-weight="700" fill="#bc8cff">coarse_head</text>
+<text x="180" y="489" text-anchor="middle" font-size="7.5" fill="#bc8cff" opacity="0.5">768 → 256 → BN → ReLU → 13</text>
+
+<!-- p_c (pill) -->
+<circle cx="122" cy="568" r="9" fill="#bc8cff" opacity="0.9"/>
+<text x="122" y="572" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">6</text>
+<rect x="104" y="554" width="152" height="46" rx="23" fill="rgba(188,140,255,0.14)" stroke="#bc8cff" stroke-width="2" stroke-opacity="0.9"/>
+<text x="180" y="573" text-anchor="middle" font-size="12" font-weight="700" fill="#bc8cff">p_c</text>
+<text x="180" y="588" text-anchor="middle" font-size="8.5" fill="#bc8cff" opacity="0.6">(B, 13)  ·  sigmoid</text>
+
+<!-- fine_head -->
+<circle cx="598" cy="468" r="9" fill="#3fb950" opacity="0.9"/>
+<text x="598" y="472" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">7</text>
+<rect x="580" y="454" width="160" height="50" rx="10" fill="rgba(63,185,80,0.09)" stroke="#3fb950" stroke-width="1.5" stroke-opacity="0.75"/>
+<text x="660" y="473" text-anchor="middle" font-size="10.5" font-weight="700" fill="#3fb950">fine_head</text>
+<text x="660" y="489" text-anchor="middle" font-size="7.5" fill="#3fb950" opacity="0.5">781 → 512 → BN → ReLU → 312</text>
+
+<!-- p_f_raw -->
+<circle cx="598" cy="568" r="9" fill="#3fb950" opacity="0.9"/>
+<text x="598" y="572" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">8</text>
+<rect x="580" y="554" width="160" height="46" rx="10" fill="rgba(63,185,80,0.09)" stroke="#3fb950" stroke-width="1.5" stroke-opacity="0.75"/>
+<text x="660" y="573" text-anchor="middle" font-size="11" font-weight="700" fill="#3fb950">p_f_raw</text>
+<text x="660" y="588" text-anchor="middle" font-size="8.5" fill="#3fb950" opacity="0.5">(B, 312)  ·  sigmoid</text>
+
+<!-- Masked Fine Head -->
+<circle cx="308" cy="666" r="9" fill="#f0883e" opacity="0.9"/>
+<text x="308" y="670" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">9</text>
+<rect x="290" y="652" width="280" height="46" rx="10" fill="rgba(240,136,62,0.13)" stroke="#f0883e" stroke-width="2" stroke-opacity="0.9"/>
+<text x="430" y="671" text-anchor="middle" font-size="11" font-weight="700" fill="#f0883e">Masked Fine Head</text>
+<text x="430" y="686" text-anchor="middle" font-size="8" fill="#f0883e" opacity="0.7">p_f = p_f_raw  ×  p_c [ parent_idx ]</text>
+
+<!-- classifier -->
+<circle cx="318" cy="754" r="9" fill="#f778ba" opacity="0.9"/>
+<text x="318" y="758" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">10</text>
+<rect x="300" y="740" width="260" height="60" rx="10" fill="rgba(247,120,186,0.09)" stroke="#f778ba" stroke-width="1.5" stroke-opacity="0.75"/>
+<text x="430" y="762" text-anchor="middle" font-size="10.5" font-weight="700" fill="#f778ba">classifier</text>
+<text x="430" y="778" text-anchor="middle" font-size="8" fill="#f778ba" opacity="0.5">Linear(312 → 200)  ·  bottleneck</text>
+<text x="430" y="791" text-anchor="middle" font-size="7.5" fill="#f778ba" opacity="0.35">بدون دسترسی به feature خام ViT</text>
+
+<!-- cls_logits (pill) -->
+<circle cx="347" cy="862" r="9" fill="#f778ba" opacity="0.9"/>
+<text x="347" y="866" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">11</text>
+<rect x="329" y="848" width="202" height="46" rx="23" fill="rgba(247,120,186,0.14)" stroke="#f778ba" stroke-width="2" stroke-opacity="0.9"/>
+<text x="430" y="867" text-anchor="middle" font-size="12" font-weight="700" fill="#f778ba">cls_logits</text>
+<text x="430" y="882" text-anchor="middle" font-size="8.5" fill="#f778ba" opacity="0.6">(B, 200)</text>
+
+<!-- ═══ ANNOTATION LABELS ═══ -->
+
+<!-- concat label on the dashed arrow -->
+<rect x="382" y="534" width="100" height="17" rx="4" fill="#1c2333" stroke="rgba(188,140,255,0.3)" stroke-width="1"/>
+<text x="432" y="546" text-anchor="middle" font-size="8" fill="#bc8cff" opacity="0.85">cat[features, p_c]</text>
+
+<!-- "768+13=781" near fine_head top -->
+<text x="660" y="444" text-anchor="middle" font-size="7.5" fill="#3fb950" opacity="0.6">input: 768 + 13 = 781</text>
+
+<!-- p_c[parent] label on arrow to masked -->
+<text x="235" y="632" text-anchor="middle" font-size="7.5" fill="#f0883e" opacity="0.75">p_c[parent_idx]</text>
+
+<!-- attr_parent_idx note -->
+<rect x="572" y="612" width="162" height="30" rx="5" fill="#1c2333" stroke="rgba(240,136,62,0.25)" stroke-width="1" stroke-dasharray="3,2"/>
+<text x="653" y="625" text-anchor="middle" font-size="7.5" fill="#f0883e" opacity="0.7">attr_parent_idx</text>
+<text x="653" y="636" text-anchor="middle" font-size="7" fill="#f0883e" opacity="0.5">register_buffer (non-trainable)</text>
+<path d="M 636 642 L 552 655" stroke="#f0883e" stroke-width="1" fill="none" marker-end="url(#ah-o)" opacity="0.35" stroke-dasharray="3,2"/>
+
+<!-- bottleneck label -->
+<text x="756" y="766" text-anchor="middle" font-size="8" fill="#f778ba" opacity="0.55">← bottleneck</text>
+<text x="756" y="776" text-anchor="middle" font-size="7.5" fill="#f778ba" opacity="0.4">no raw features</text>
+
+<!-- freeze annotation on backbone -->
+<rect x="602" y="258" width="112" height="40" rx="5" fill="#1c2333" stroke="rgba(240,136,62,0.35)" stroke-width="1"/>
+<text x="658" y="273" text-anchor="middle" font-size="7.5" fill="#f0883e" opacity="0.9" font-weight="600">🔒 FROZEN</text>
+<text x="658" y="285" text-anchor="middle" font-size="7" fill="#f0883e" opacity="0.6">Phase 1 / Phase 2</text>
+<text x="658" y="295" text-anchor="middle" font-size="7" fill="#3fb950" opacity="0.6">lr=3e-6 in Phase 3</text>
+
+<!-- "196 patches" visual hint -->
+<rect x="618" y="150" width="102" height="42" rx="5" fill="#1c2333" stroke="rgba(57,211,83,0.2)" stroke-width="1"/>
+<text x="669" y="165" text-anchor="middle" font-size="7.5" fill="#39d353" opacity="0.8">196 patches</text>
+<text x="669" y="177" text-anchor="middle" font-size="7" fill="#39d353" opacity="0.55">= (384÷16)²</text>
+<text x="669" y="188" text-anchor="middle" font-size="7" fill="#6e7681" opacity="0.7">each: 16×16px</text>
+
+</svg>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- STEP CARDS                                           -->
+<!-- ═══════════════════════════════════════════════════ -->
+
+<!-- 0. Metadata -->
+<div class="step" style="border-color:color-mix(in srgb,var(--gold) 35%,transparent)">
+  <div class="flow">
+    <div class="inputs-side">
+      <div class="inp-block">
+        <div class="inp-name">📦 data_pipeline.pkl</div>
+        <div class="box-ref" style="color:#e3b341;border-color:#e3b341;background:color-mix(in srgb,#e3b341 10%,transparent)">feeds → 5  7  9</div>
+        <div class="inp-shape">ذخیره‌شده از 01_data.ipynb</div>
+        <div class="inp-detail">NUM_L1 · NUM_L2 · CONCEPT_NAMES · attr_parent_idx</div>
+      </div>
+    </div>
+    <div class="arrow-col">→</div>
+    <div class="outputs-side">
+      <div><span class="v-chip gold">NUM_L1 = 13</span><div class="v-usage">تعداد خروجی coarse head</div></div>
+      <div><span class="v-chip gold">NUM_L2 = 312</span><div class="v-usage">تعداد خروجی fine head</div></div>
+      <div><span class="v-chip gold">attr_parent_idx</span><div class="v-usage">در Masked Fine Head · register_buffer</div></div>
+    </div>
+  </div>
+  <div class="desc">
+    <p>قبل از ساختن مدل، metadata ذخیره‌شده از <code>01_data.ipynb</code> را می‌خوانیم تا معماری مدل دقیقاً با ساختار واقعی دیتاست هماهنگ باشد.</p>
+    <p><code>attr_parent_idx</code> با <code>register_buffer</code> در مدل ذخیره می‌شود — جزو وزن‌های trainable نیست، اما همراه مدل روی CPU/GPU جابه‌جا می‌شود و هنگام save/load باقی می‌ماند.</p>
+  </div>
+</div>
+
+<div class="connector"><div class="conn-line"></div></div>
+
+<!-- 1. ViT Backbone -->
+<div class="step" style="border-color:color-mix(in srgb,var(--teal) 35%,transparent)">
+  <div class="flow">
+    <div class="inputs-side">
+      <div class="inp-block">
+        <div class="inp-name">🖼 image</div>
+        <div class="box-ref" style="color:#39d353;border-color:#39d353;background:color-mix(in srgb,#39d353 10%,transparent)">Box 1  2  3  4</div>
+        <div class="inp-shape">(B, 3, 384, 384)</div>
+        <div class="inp-detail">بزرگ‌تر از ResNet — 384 به جای 336</div>
+      </div>
+      <div class="inp-block">
+        <div class="inp-name">🤖 ViT-B/16</div>
+        <div class="inp-shape">timm · SWAG_E2E_V1 weights</div>
+        <div class="inp-detail">86M params · pre-trained روی Instagram 3B + ImageNet</div>
+        <div>
+          <span class="freeze-badge frozen">🔒 Frozen — Phase 1a, 1b, 2</span><br>
+          <span class="freeze-badge active">🔓 Unfreeze — Phase 3 · lr = 3e-6</span>
+        </div>
+      </div>
+    </div>
+    <div class="arrow-col">→</div>
+    <div class="outputs-side">
+      <div><span class="v-chip teal">features</span><div class="v-type">(B, 768)  ·  [CLS] token</div><div class="v-usage">ورودی هم coarse head هم fine head</div></div>
+    </div>
+  </div>
+  <div class="desc">
+    <p>به جای ResNet-50 (2048-dim)، ما از <b>ViT-B/16</b> استفاده می‌کنیم. ViT تصویر <code>(B,3,384,384)</code> را به <b>196 patch</b> ۱۶×۱۶ پیکسلی تقسیم می‌کند، هر patch را به یک token تبدیل می‌کند، و با <b>Self-Attention</b> هر token را با تمام ۱۹۵ token دیگر مقایسه می‌کند.</p>
+    <p>خروجی یک بردار <b>768تایی</b> است (نه 2048تایی مثل ResNet) — این همان <code>[CLS]</code> token است که خلاصه کل تصویر در آن فشرده شده. ویژگی کلیدی: رابطه بین نوک پرنده و دم از همان ابتدا مستقیم دیده می‌شود، نه لایه‌به‌لایه مثل CNN.</p>
+    <div class="note teal"><b>چرا ViT بهتر است؟</b> برای fine-grained classification (200 گونه شبیه به هم)، باید همزمان جزئیات پراکنده در سراسر تصویر دیده شوند. ResNet این رابطه‌ها را لایه‌به‌لایه منتقل می‌کند — بخشی از آن‌ها گم می‌شوند. ViT از ابتدا global attention دارد و <b>~88-93% val_acc</b> در مقابل ~82-85% ResNet انتظار می‌رود.</div>
+  </div>
+</div>
+
+<div class="connector"><div class="conn-line"></div></div>
+
+<!-- 2. Coarse Head -->
+<div class="step" style="border-color:color-mix(in srgb,var(--purple) 35%,transparent)">
+  <div class="flow">
+    <div class="inputs-side">
+      <div class="inp-block">
+        <div class="inp-name">features</div>
+        <div class="box-ref" style="color:#bc8cff;border-color:#bc8cff;background:color-mix(in srgb,#bc8cff 10%,transparent)">Box 5  6</div>
+        <div class="inp-shape">(B, 768)</div>
+        <div class="inp-detail">[CLS] token از ViT</div>
+      </div>
+      <div class="inp-block">
+        <div class="inp-name">🧩 coarse_head</div>
+        <div class="inp-shape">Linear(768→256) → BN → ReLU → Dropout(0.2) → Linear(256→13)</div>
+        <div class="inp-detail">hidden dim 256 · BatchNorm برای پایداری آموزش</div>
+      </div>
+    </div>
+    <div class="arrow-col">→</div>
+    <div class="outputs-side">
+      <div><span class="v-chip purple">p_c</span><div class="v-type">(B, 13) · sigmoid</div><div class="v-usage">ورودی fine head (concat) + L1 concept loss</div></div>
+    </div>
+  </div>
+  <div class="desc">
+    <p><b>coarse_head کل feature (768تایی) را می‌گیرد</b> و می‌پرسد: از ۱۳ concept کلی (bill، wing، tail، ...) کدام‌ها در این تصویر وجود دارند؟</p>
+    <p>خروجی آن <code>p_c</code> است — یک بردار ۱۳تایی. مثلاً: <code>bill=0.91 · wing=0.87 · tail=0.12</code></p>
+    <div class="note purple"><b>Phase 1 — Joint Heads:</b> backbone freeze است. coarse_head + fine_head + classifier همه با هم آموزش می‌بینند. loss: <code>λ_c·L_coarse + λ_f·L_fine + 0.1·L_task</code>. وزن کوچک L_task از همان ابتدا concept‌ها را discriminative می‌کند.</div>
+  </div>
+</div>
+
+<div class="connector"><div class="conn-line"></div></div>
+
+<!-- 3. Fine Head -->
+<div class="step" style="border-color:color-mix(in srgb,var(--green) 35%,transparent)">
+  <div class="flow">
+    <div class="inputs-side">
+      <div class="inp-block">
+        <div class="inp-name">concat [ features , p_c ]</div>
+        <div class="box-ref" style="color:#3fb950;border-color:#3fb950;background:color-mix(in srgb,#3fb950 10%,transparent)">Box 7  8</div>
+        <div class="inp-shape">(B, 768 + 13) = (B, 781)</div>
+        <div class="inp-detail">feature خام ViT + آگاهی از concept  ← نه 2061 مثل ResNet</div>
+      </div>
+      <div class="inp-block">
+        <div class="inp-name">🔬 fine_head</div>
+        <div class="inp-shape">Linear(781→512) → BN → ReLU → Dropout(0.4) → Linear(512→312)</div>
+      </div>
+    </div>
+    <div class="arrow-col">→</div>
+    <div class="outputs-side">
+      <div><span class="v-chip green">p_f_raw</span><div class="v-type">(B, 312) · sigmoid</div><div class="v-usage">ورودی Masked Fine Head</div></div>
+    </div>
+  </div>
+  <div class="desc">
+    <p><b>fine_head هم feature (768تایی) و هم <code>p_c</code> را می‌گیرد</b> و می‌پرسد: از ۳۱۲ attribute جزئی کدام‌ها وجود دارند؟ ابتدا دو ورودی concatenate می‌شوند: <code>768 + 13 = 781</code> (در ResNet این 2061 بود).</p>
+    <p>اما یک تفاوت مهم با coarse_head دارد: <b>خروجی coarse_head یعنی <code>p_c</code> را هم کنار feature می‌گیرد.</b> پس fine_head از قبل می‌داند bill با احتمال ۰.۹۱ در تصویر هست — راحت‌تر می‌تواند بگوید has_bill_color::red هست یا نه.</p>
+    <p>خروجی آن <code>p_f_raw</code> است — یک بردار ۳۱۲تایی از probabilityهای خام، قبل از اعمال hierarchy.</p>
+    <div class="note green"><b>Phase 1 — Joint Heads:</b> هر دو head همراه classifier در این فاز آموزش می‌بینند (backbone freeze). fine_head با Dropout بالاتر (0.4) نسبت به coarse_head (0.2) از overfitting بهتر جلوگیری می‌کند چون ۳۱۲ خروجی دارد.</div>
+  </div>
+</div>
+
+<div class="connector"><div class="conn-line"></div></div>
+
+<!-- 4. Masked Fine Head -->
+<div class="step" style="border-color:color-mix(in srgb,var(--orange) 35%,transparent)">
+  <div class="flow">
+    <div class="inputs-side">
+      <div class="inp-block">
+        <div class="inp-name">p_f_raw  +  p_c[parent_idx]</div>
+        <div class="box-ref" style="color:#f0883e;border-color:#f0883e;background:color-mix(in srgb,#f0883e 10%,transparent)">Box 9</div>
+        <div class="inp-shape">(B, 312) &nbsp;×&nbsp; mask(B, 312)</div>
+        <div class="inp-detail">attr_parent_idx از register_buffer</div>
+      </div>
+    </div>
+    <div class="arrow-col">→</div>
+    <div class="outputs-side">
+      <div><span class="v-chip orange">p_f</span><div class="v-type">(B, 312) · hierarchy enforced</div><div class="v-usage">ورودی classifier + L2 attribute loss</div></div>
+    </div>
+  </div>
+  <div class="desc">
+    <p><b>Masked Fine Head یک عملیات ساده است، نه یک شبکه.</b> <code>p_f_raw</code> را می‌گیرد و هر attribute را در احتمال parent آن ضرب می‌کند:</p>
+    <div class="formula">p_f[i] = p_f_raw[i]  ×  p_c[ parent(i) ]</div>
+    <p><b>مثال:</b> اگر <code>bill = 0.1</code> (یعنی bill تقریباً نیست)، پس:</p>
+    <div class="formula">has_bill_color::red  =  0.9 × 0.1  =  0.09</div>
+    <p><b>نتیجه کلیدی:</b> اگر <code>p_c</code> برای یک concept کم باشد، تمام <code>p_f</code>های زیرمجموعه‌اش هم قطعاً کم می‌شوند.</p>
+    <div class="note orange"><b>constraint معماری سخت:</b> مدل نمی‌تواند این قانون را نادیده بگیرد — ریاضیات اجازه نمی‌دهد. در ViT این constraint مؤثرتر است چون <code>p_c</code> با attention کلی، دقیق‌تر از ResNet است.</div>
+  </div>
+</div>
+
+<div class="connector"><div class="conn-line"></div></div>
+
+<!-- 5. Classifier -->
+<div class="step" style="border-color:color-mix(in srgb,var(--pink) 35%,transparent)">
+  <div class="flow">
+    <div class="inputs-side">
+      <div class="inp-block">
+        <div class="inp-name">p_f</div>
+        <div class="box-ref" style="color:#f778ba;border-color:#f778ba;background:color-mix(in srgb,#f778ba 10%,transparent)">Box 10  11</div>
+        <div class="inp-shape">(B, 312)</div>
+        <div class="inp-detail">فقط p_f — بدون دسترسی به feature خام ViT</div>
+      </div>
+      <div class="inp-block">
+        <div class="inp-name">🎯 classifier</div>
+        <div class="inp-shape">Linear(312 → 200)</div>
+        <div class="inp-detail">همان در ResNet — bottleneck تغییر نمی‌کند</div>
+      </div>
+    </div>
+    <div class="arrow-col">→</div>
+    <div class="outputs-side">
+      <div><span class="v-chip pink">cls_logits</span><div class="v-type">(B, 200)</div><div class="v-usage">در classification loss و evaluation</div></div>
+    </div>
+  </div>
+  <div class="desc">
+    <p>classifier نهایی فقط <code>p_f</code> را می‌بیند و <b>مستقیم به feature خام ViT دسترسی ندارد</b>. این همان <b>bottleneck</b> اصلی مدل است.</p>
+    <div class="note purple"><b>Phase 2 — Calibration:</b> backbone و heads همه freeze هستند. فقط classifier آموزش می‌بیند — روی <b>predicted p_f</b> (نه GT!). این «calibration trick» است: classifier از همان توزیعی آموزش می‌بیند که در inference می‌بیند. max <b>100 epoch</b>. loss: فقط <code>L_task</code>.</div>
+    <div class="note pink"><b>چرا تفسیرپذیر است؟</b> می‌توان دید کدام attribute و concept باعث شده مدل این کلاس را انتخاب کند. با sigmoid، هر عدد بین 0 تا 1 یعنی «چقدر این attribute وجود دارد» — این اصل اصلی CBM است.</div>
+  </div>
+</div>
+
+<div class="connector" style="padding-bottom:0"><div class="conn-line"></div><span>خروجی‌های forward pass</span></div>
+
+<!-- Final -->
+<div class="final-block">
+  <div class="final-title">⟶ Forward Pass — خلاصه · ViT-B/16</div>
+  <div class="code-block"><span class="c"># image (384×384) → ViT-B/16 → features (768) → دو مسیر موازی</span>
+cls_logits, p_c, p_f = model(imgs)
+
+<span class="c"># imgs       : (B,  3, 384, 384)  ← بزرگ‌تر از ResNet (336)</span>
+<span class="c"># features   : (B, 768)           ← CLS token ViT  (نه 2048)</span>
+<span class="c"># concat     : (B, 781)           ← 768 + 13 = 781  (نه 2061)</span>
+<span class="c"># cls_logits : (B, 200)           ← logit کلاس نهایی    ← classification loss</span>
+<span class="c"># p_c        : (B,  13)           ← prob L1 concept       ← L1 concept loss</span>
+<span class="c"># p_f        : (B, 312)           ← prob L2 attr (masked) ← L2 attribute loss</span>
+</div>
+
+  <div style="margin-top:18px;">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#39d353;margin-bottom:10px;">راهنمای ۳ فاز آموزش — ViT-B/16 (یکسان با ResNet)</div>
+    <table class="phase-table">
+      <thead>
+        <tr>
+          <th>Phase</th>
+          <th>چی train میشه</th>
+          <th>Backbone</th>
+          <th>Loss</th>
+          <th>Max Epoch</th>
+          <th>Early Stop</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="color:#bc8cff;">1</td>
+          <td style="color:#bc8cff;">Coarse + Fine + Classifier</td>
+          <td style="color:#f0883e;">🔒 Frozen</td>
+          <td style="color:#6e7681;">λ_c·L_c + λ_f·L_f + 0.1·L_t</td>
+          <td style="color:#6e7681;">100</td>
+          <td style="color:#6e7681;">val_loss · pat=20</td>
+        </tr>
+        <tr>
+          <td style="color:#f0883e;">2</td>
+          <td style="color:#f0883e;">Classifier only (predicted p_f)</td>
+          <td style="color:#f0883e;">🔒 Frozen</td>
+          <td style="color:#6e7681;">L_task</td>
+          <td style="color:#6e7681;">100</td>
+          <td style="color:#6e7681;">val_loss · pat=30</td>
+        </tr>
+        <tr>
+          <td style="color:#f778ba;">3</td>
+          <td style="color:#f778ba;">همه — Joint Fine-Tune · MixUp(α=0.2)</td>
+          <td style="color:#3fb950;">🔓 lr=1e-6</td>
+          <td style="color:#6e7681;">2·L_c + 2·L_f + 1·L_t</td>
+          <td style="color:#6e7681;">300</td>
+          <td style="color:#f778ba;font-weight:600;">val_acc · pat=40</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div><!-- page -->
+</body>
+</html>

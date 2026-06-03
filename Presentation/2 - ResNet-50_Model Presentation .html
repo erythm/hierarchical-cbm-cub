@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HierarchicalCBM — ResNet-50 Architecture</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d1117;--surface:#161b22;--surface2:#1c2333;--border:#21262d;
+  --text:#c9d1d9;--muted:#6e7681;
+  --blue:#58a6ff;--purple:#bc8cff;--green:#3fb950;
+  --orange:#f0883e;--pink:#f778ba;--gold:#e3b341;--red:#f85149;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Vazirmatn',sans-serif;line-height:1.75;min-height:100vh;}
+.page{max-width:900px;margin:0 auto;padding:52px 24px 80px;}
+
+.hero{text-align:center;margin-bottom:48px;}
+.hero-tag{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;color:var(--muted);background:var(--surface);border:1px solid var(--border);padding:4px 14px;border-radius:20px;margin-bottom:16px;text-transform:uppercase;}
+.hero h1{font-size:28px;font-weight:700;color:#f0f6fc;margin-bottom:8px;}
+.hero p{font-size:13px;color:var(--muted);max-width:540px;margin:0 auto;}
+
+/* ── Arch diagram ── */
+.arch-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:40px;}
+.arch-card-header{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+.arch-card-title{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);}
+.arch-svg-wrap{padding:20px;overflow-x:auto;display:flex;justify-content:center;}
+
+/* ── Steps ── */
+.step{border-right:2px solid var(--border);padding-right:24px;margin-right:8px;}
+.flow{display:flex;align-items:stretch;gap:14px;direction:ltr;border:1px solid var(--border);border-radius:10px 10px 0 0;background:var(--surface);overflow:hidden;}
+.inputs-side{display:flex;flex-direction:column;min-width:248px;border-left:1px solid var(--border);}
+.inp-block{flex:1;padding:13px 15px;border-bottom:1px solid var(--border);}
+.inp-block:last-child{border-bottom:none;}
+.inp-name{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px;}
+.inp-shape{font-family:'IBM Plex Mono',monospace;font-size:9.5px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 9px;color:#5a7a95;direction:ltr;text-align:left;display:inline-block;}
+.inp-detail{font-size:9.5px;color:var(--muted);margin-top:5px;font-family:'IBM Plex Mono',monospace;}
+.arrow-col{display:flex;align-items:center;justify-content:center;padding:0 6px;flex-shrink:0;color:var(--muted);font-size:20px;}
+.outputs-side{flex:1;display:flex;flex-direction:column;justify-content:center;padding:14px;gap:9px;}
+.v-chip{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;padding:6px 14px;border-radius:20px;border:1px solid;display:inline-block;align-self:flex-start;}
+.v-type{font-size:9px;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-top:2px;}
+.v-usage{font-size:9.5px;color:var(--red);font-family:'IBM Plex Mono',monospace;margin-top:3px;direction:rtl;}
+.desc{padding:16px 20px 18px;background:var(--surface2);border:1px solid var(--border);border-top:none;border-radius:0 0 10px 10px;font-size:13px;color:#8b949e;}
+.desc p{margin-bottom:9px;}.desc p:last-child{margin-bottom:0;}
+.desc b{color:var(--text);font-weight:600;}
+.desc code{font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--surface);border:1px solid var(--border);padding:1px 6px;border-radius:4px;}
+.note{border-right:3px solid;border-radius:0 6px 6px 0;padding:8px 12px;margin:9px 0;font-size:12px;}
+.note b{font-weight:600;}
+.formula{font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--surface);border:1px solid var(--border);padding:8px 12px;border-radius:5px;color:#7a90aa;direction:ltr;text-align:left;margin:8px 0;}
+
+.connector{display:flex;align-items:center;padding:12px 0;margin-right:8px;padding-right:24px;color:var(--muted);font-size:10px;font-family:'IBM Plex Mono',monospace;}
+.conn-line{width:2px;height:26px;background:var(--border);margin-right:-25px;margin-left:12px;flex-shrink:0;}
+
+/* Phase table */
+.phase-table{width:100%;border-collapse:collapse;margin:16px 0;font-size:12px;}
+.phase-table th{background:var(--surface2);color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:8px 12px;border:1px solid var(--border);text-align:center;}
+.phase-table td{padding:8px 12px;border:1px solid var(--border);font-family:'IBM Plex Mono',monospace;font-size:10px;text-align:center;vertical-align:middle;}
+
+/* Final */
+.final-block{margin-top:8px;background:linear-gradient(135deg,color-mix(in srgb,var(--blue) 5%,var(--surface)),var(--surface));border:1px solid color-mix(in srgb,var(--blue) 30%,transparent);border-radius:10px;padding:22px 24px;}
+.final-title{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin-bottom:14px;}
+.code-block{font-family:'IBM Plex Mono',monospace;font-size:10.5px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:12px 14px;line-height:1.9;color:#8b949e;direction:ltr;text-align:left;overflow-x:auto;}
+.code-block .c{color:#3d5268;}.code-block .k{color:var(--blue);}.code-block .n{color:var(--orange);}
+
+/* colors */
+.gold  {color:var(--gold);  border-color:color-mix(in srgb,var(--gold)  45%,transparent);background:color-mix(in srgb,var(--gold)  9%,transparent);}
+.blue  {color:var(--blue);  border-color:color-mix(in srgb,var(--blue)  45%,transparent);background:color-mix(in srgb,var(--blue)  9%,transparent);}
+.purple{color:var(--purple);border-color:color-mix(in srgb,var(--purple)45%,transparent);background:color-mix(in srgb,var(--purple)9%,transparent);}
+.green {color:var(--green); border-color:color-mix(in srgb,var(--green) 45%,transparent);background:color-mix(in srgb,var(--green) 9%,transparent);}
+.orange{color:var(--orange);border-color:color-mix(in srgb,var(--orange)45%,transparent);background:color-mix(in srgb,var(--orange)9%,transparent);}
+.pink  {color:var(--pink);  border-color:color-mix(in srgb,var(--pink)  45%,transparent);background:color-mix(in srgb,var(--pink)  9%,transparent);}
+.note.blue  {border-color:var(--blue);  background:color-mix(in srgb,var(--blue)  5%,transparent);color:#8b949e;}
+.note.purple{border-color:var(--purple);background:color-mix(in srgb,var(--purple)5%,transparent);color:#8b949e;}
+.note.green {border-color:var(--green); background:color-mix(in srgb,var(--green) 5%,transparent);color:#8b949e;}
+.note.orange{border-color:var(--orange);background:color-mix(in srgb,var(--orange)5%,transparent);color:#8b949e;}
+.note.pink  {border-color:var(--pink);  background:color-mix(in srgb,var(--pink)  5%,transparent);color:#8b949e;}
+.box-ref{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:8.5px;font-weight:700;padding:2px 8px;border-radius:3px;border:1px solid;margin-top:6px;letter-spacing:.06em;}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="hero">
+  <div class="hero-tag">02_ResNet50_train.ipynb</div>
+  <h1>HierarchicalCBM — ResNet-50</h1>
+  <p>Concept Bottleneck Model سلسله‌مراتبی با backbone ResNet-50 — تصویر به feature vector 2048تایی تبدیل می‌شود · convolution محلی · سه فاز آموزش</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- ARCHITECTURE DIAGRAM                                 -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="arch-card">
+  <div class="arch-card-header">
+    <div class="arch-card-title">▸ معماری کامل مدل — HierarchicalCBM (ResNet-50 Backbone)</div>
+  </div>
+  <div class="arch-svg-wrap">
+
+<svg viewBox="0 0 860 870" width="860" height="870" xmlns="http://www.w3.org/2000/svg" style="font-family:'IBM Plex Mono',monospace">
+<defs>
+  <marker id="ah-b"  markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#58a6ff"/></marker>
+  <marker id="ah-p"  markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#bc8cff"/></marker>
+  <marker id="ah-g"  markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#3fb950"/></marker>
+  <marker id="ah-o"  markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#f0883e"/></marker>
+  <marker id="ah-pk" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0 0,8 4,0 8" fill="#f778ba"/></marker>
+</defs>
+
+<!-- background -->
+<rect width="860" height="870" fill="#161b22" rx="0"/>
+
+<!-- subtle section backgrounds -->
+<rect x="280" y="28" width="300" height="240" rx="10" fill="rgba(88,166,255,0.04)" stroke="rgba(88,166,255,0.09)" stroke-width="1"/>
+<rect x="75"  y="290" width="210" height="210" rx="10" fill="rgba(188,140,255,0.04)" stroke="rgba(188,140,255,0.08)" stroke-width="1"/>
+<rect x="555" y="290" width="210" height="210" rx="10" fill="rgba(63,185,80,0.04)"   stroke="rgba(63,185,80,0.08)"  stroke-width="1"/>
+<rect x="278" y="520" width="305" height="62"  rx="10" fill="rgba(240,136,62,0.05)"  stroke="rgba(240,136,62,0.1)" stroke-width="1"/>
+<rect x="285" y="610" width="290" height="220" rx="10" fill="rgba(247,120,186,0.04)" stroke="rgba(247,120,186,0.08)" stroke-width="1"/>
+
+<!-- left side section labels -->
+<text x="20" y="68"  font-size="9" fill="#58a6ff" opacity="0.6" font-weight="600">① INPUT</text>
+<text x="20" y="185" font-size="9" fill="#58a6ff" opacity="0.6" font-weight="600">② BACKBONE</text>
+<text x="20" y="275" font-size="9" fill="#58a6ff" opacity="0.6" font-weight="600">③ FEATURES</text>
+<text x="20" y="360" font-size="9" fill="#bc8cff" opacity="0.6" font-weight="600">④ COARSE</text>
+<text x="20" y="460" font-size="9" fill="#bc8cff" opacity="0.6" font-weight="600">⑤ p_c</text>
+<text x="20" y="550" font-size="9" fill="#f0883e" opacity="0.6" font-weight="600">⑥ MASKED</text>
+<text x="20" y="650" font-size="9" fill="#f778ba" opacity="0.6" font-weight="600">⑦ CLASSIFY</text>
+<text x="20" y="750" font-size="9" fill="#f778ba" opacity="0.6" font-weight="600">⑧ OUTPUT</text>
+
+<!-- ═══ ARROWS ═══ -->
+<!-- image → backbone -->
+<path d="M 430 82 L 430 138" stroke="#58a6ff" stroke-width="1.5" fill="none" marker-end="url(#ah-b)" opacity="0.65"/>
+<!-- backbone → features -->
+<path d="M 430 196 L 430 246" stroke="#58a6ff" stroke-width="1.5" fill="none" marker-end="url(#ah-b)" opacity="0.65"/>
+<!-- features → coarse_head (left) -->
+<path d="M 380 292 C 380 328, 180 328, 180 348" stroke="#bc8cff" stroke-width="1.5" fill="none" marker-end="url(#ah-p)" opacity="0.65"/>
+<!-- features → fine_head (right) -->
+<path d="M 480 292 C 480 328, 660 328, 660 348" stroke="#3fb950" stroke-width="1.5" fill="none" marker-end="url(#ah-g)" opacity="0.65"/>
+<!-- coarse_head → p_c -->
+<path d="M 180 398 L 180 448" stroke="#bc8cff" stroke-width="1.5" fill="none" marker-end="url(#ah-p)" opacity="0.65"/>
+<!-- p_c → fine_head (dashed concat) -->
+<path d="M 256 470 C 430 470, 430 372, 578 372" stroke="#bc8cff" stroke-width="1.5" fill="none" marker-end="url(#ah-p)" opacity="0.55" stroke-dasharray="5,3"/>
+<!-- fine_head → p_f_raw -->
+<path d="M 660 398 L 660 448" stroke="#3fb950" stroke-width="1.5" fill="none" marker-end="url(#ah-g)" opacity="0.65"/>
+<!-- p_c → masked -->
+<path d="M 208 494 C 208 534, 308 534, 308 544" stroke="#f0883e" stroke-width="1.5" fill="none" marker-end="url(#ah-o)" opacity="0.65"/>
+<!-- p_f_raw → masked -->
+<path d="M 635 494 C 635 534, 553 534, 553 544" stroke="#f0883e" stroke-width="1.5" fill="none" marker-end="url(#ah-o)" opacity="0.65"/>
+<!-- masked → classifier -->
+<path d="M 430 590 L 430 632" stroke="#f778ba" stroke-width="1.5" fill="none" marker-end="url(#ah-pk)" opacity="0.65"/>
+<!-- classifier → cls_logits -->
+<path d="M 430 692 L 430 738" stroke="#f778ba" stroke-width="1.5" fill="none" marker-end="url(#ah-pk)" opacity="0.65"/>
+
+<!-- ═══ NODES ═══ -->
+
+<!-- image -->
+<circle cx="360" cy="52" r="9" fill="#58a6ff" opacity="0.9"/>
+<text x="360" y="56" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">1</text>
+<rect x="320" y="38" width="220" height="44" rx="10" fill="rgba(88,166,255,0.09)" stroke="#58a6ff" stroke-width="1.5" stroke-opacity="0.75"/>
+<text x="430" y="56" text-anchor="middle" font-size="11" font-weight="700" fill="#58a6ff">image</text>
+<text x="430" y="71" text-anchor="middle" font-size="8.5" fill="#58a6ff" opacity="0.5">(B, 3, 336, 336)</text>
+
+<!-- backbone -->
+<circle cx="313" cy="152" r="9" fill="#58a6ff" opacity="0.9"/>
+<text x="313" y="156" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">2</text>
+<rect x="295" y="138" width="270" height="58" rx="10" fill="rgba(88,166,255,0.07)" stroke="#58a6ff" stroke-width="1.5" stroke-opacity="0.6"/>
+<text x="430" y="158" text-anchor="middle" font-size="10.5" font-weight="700" fill="#58a6ff">ResNet-50 Backbone</text>
+<text x="430" y="174" text-anchor="middle" font-size="8" fill="#58a6ff" opacity="0.55">pretrained ImageNet · fc removed · GlobalAvgPool + Dropout(0.3)</text>
+<text x="430" y="188" text-anchor="middle" font-size="7.5" fill="#58a6ff" opacity="0.4">25M params · convolution محلی · 🔒 Frozen در Phase 1 و 2 · 🔓 lr=5e-5 در Phase 3</text>
+
+<!-- features -->
+<circle cx="347" cy="260" r="9" fill="#58a6ff" opacity="0.9"/>
+<text x="347" y="264" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">3</text>
+<rect x="329" y="246" width="202" height="46" rx="23" fill="rgba(88,166,255,0.17)" stroke="#58a6ff" stroke-width="2" stroke-opacity="0.9"/>
+<text x="430" y="265" text-anchor="middle" font-size="12" font-weight="700" fill="#58a6ff">features</text>
+<text x="430" y="280" text-anchor="middle" font-size="8.5" fill="#58a6ff" opacity="0.6">(B, 2048)</text>
+
+<!-- coarse_head -->
+<circle cx="118" cy="362" r="9" fill="#bc8cff" opacity="0.9"/>
+<text x="118" y="366" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">4</text>
+<rect x="100" y="348" width="160" height="50" rx="10" fill="rgba(188,140,255,0.09)" stroke="#bc8cff" stroke-width="1.5" stroke-opacity="0.75"/>
+<text x="180" y="367" text-anchor="middle" font-size="10.5" font-weight="700" fill="#bc8cff">coarse_head</text>
+<text x="180" y="382" text-anchor="middle" font-size="7.5" fill="#bc8cff" opacity="0.5">2048 → 256 → BN → ReLU → 13</text>
+
+<!-- p_c (pill) -->
+<circle cx="122" cy="462" r="9" fill="#bc8cff" opacity="0.9"/>
+<text x="122" y="466" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">5</text>
+<rect x="104" y="448" width="152" height="46" rx="23" fill="rgba(188,140,255,0.14)" stroke="#bc8cff" stroke-width="2" stroke-opacity="0.9"/>
+<text x="180" y="467" text-anchor="middle" font-size="12" font-weight="700" fill="#bc8cff">p_c</text>
+<text x="180" y="482" text-anchor="middle" font-size="8.5" fill="#bc8cff" opacity="0.6">(B, 13)  ·  sigmoid</text>
+
+<!-- fine_head -->
+<circle cx="598" cy="362" r="9" fill="#3fb950" opacity="0.9"/>
+<text x="598" y="366" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">6</text>
+<rect x="580" y="348" width="160" height="50" rx="10" fill="rgba(63,185,80,0.09)" stroke="#3fb950" stroke-width="1.5" stroke-opacity="0.75"/>
+<text x="660" y="367" text-anchor="middle" font-size="10.5" font-weight="700" fill="#3fb950">fine_head</text>
+<text x="660" y="382" text-anchor="middle" font-size="7.5" fill="#3fb950" opacity="0.5">2061 → 512 → BN → ReLU → 312</text>
+
+<!-- p_f_raw -->
+<circle cx="598" cy="462" r="9" fill="#3fb950" opacity="0.9"/>
+<text x="598" y="466" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">7</text>
+<rect x="580" y="448" width="160" height="46" rx="10" fill="rgba(63,185,80,0.09)" stroke="#3fb950" stroke-width="1.5" stroke-opacity="0.75"/>
+<text x="660" y="467" text-anchor="middle" font-size="11" font-weight="700" fill="#3fb950">p_f_raw</text>
+<text x="660" y="482" text-anchor="middle" font-size="8.5" fill="#3fb950" opacity="0.5">(B, 312)  ·  sigmoid</text>
+
+<!-- Masked Fine Head -->
+<circle cx="308" cy="558" r="9" fill="#f0883e" opacity="0.9"/>
+<text x="308" y="562" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">8</text>
+<rect x="290" y="544" width="280" height="46" rx="10" fill="rgba(240,136,62,0.13)" stroke="#f0883e" stroke-width="2" stroke-opacity="0.9"/>
+<text x="430" y="563" text-anchor="middle" font-size="11" font-weight="700" fill="#f0883e">Masked Fine Head</text>
+<text x="430" y="578" text-anchor="middle" font-size="8" fill="#f0883e" opacity="0.7">p_f = p_f_raw  ×  p_c [ parent_idx ]</text>
+
+<!-- classifier -->
+<circle cx="318" cy="646" r="9" fill="#f778ba" opacity="0.9"/>
+<text x="318" y="650" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">9</text>
+<rect x="300" y="632" width="260" height="60" rx="10" fill="rgba(247,120,186,0.09)" stroke="#f778ba" stroke-width="1.5" stroke-opacity="0.75"/>
+<text x="430" y="654" text-anchor="middle" font-size="10.5" font-weight="700" fill="#f778ba">classifier</text>
+<text x="430" y="670" text-anchor="middle" font-size="8" fill="#f778ba" opacity="0.5">Linear(312 → 200)  ·  bottleneck</text>
+<text x="430" y="683" text-anchor="middle" font-size="7.5" fill="#f778ba" opacity="0.35">بدون دسترسی به feature خام ResNet</text>
+
+<!-- cls_logits (pill) -->
+<circle cx="347" cy="752" r="9" fill="#f778ba" opacity="0.9"/>
+<text x="347" y="756" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0d1117">10</text>
+<rect x="329" y="738" width="202" height="46" rx="23" fill="rgba(247,120,186,0.14)" stroke="#f778ba" stroke-width="2" stroke-opacity="0.9"/>
+<text x="430" y="757" text-anchor="middle" font-size="12" font-weight="700" fill="#f778ba">cls_logits</text>
+<text x="430" y="772" text-anchor="middle" font-size="8.5" fill="#f778ba" opacity="0.6">(B, 200)</text>
+
+<!-- ═══ ANNOTATION LABELS ═══ -->
+
+<!-- concat label -->
+<rect x="382" y="428" width="100" height="17" rx="4" fill="#1c2333" stroke="rgba(188,140,255,0.3)" stroke-width="1"/>
+<text x="432" y="440" text-anchor="middle" font-size="8" fill="#bc8cff" opacity="0.85">cat[features, p_c]</text>
+
+<!-- "2048+13=2061" near fine_head top -->
+<text x="660" y="338" text-anchor="middle" font-size="7.5" fill="#3fb950" opacity="0.6">input: 2048 + 13 = 2061</text>
+
+<!-- p_c[parent] label -->
+<text x="234" y="524" text-anchor="middle" font-size="7.5" fill="#f0883e" opacity="0.75">p_c[parent_idx]</text>
+
+<!-- attr_parent_idx note -->
+<rect x="572" y="504" width="162" height="30" rx="5" fill="#1c2333" stroke="rgba(240,136,62,0.25)" stroke-width="1" stroke-dasharray="3,2"/>
+<text x="653" y="517" text-anchor="middle" font-size="7.5" fill="#f0883e" opacity="0.7">attr_parent_idx</text>
+<text x="653" y="528" text-anchor="middle" font-size="7" fill="#f0883e" opacity="0.5">register_buffer (non-trainable)</text>
+<path d="M 636 534 L 553 547" stroke="#f0883e" stroke-width="1" fill="none" marker-end="url(#ah-o)" opacity="0.35" stroke-dasharray="3,2"/>
+
+<!-- bottleneck label -->
+<text x="756" y="658" text-anchor="middle" font-size="8" fill="#f778ba" opacity="0.55">← bottleneck</text>
+<text x="756" y="668" text-anchor="middle" font-size="7.5" fill="#f778ba" opacity="0.4">no raw features</text>
+
+<!-- conv note -->
+<rect x="598" y="148" width="120" height="40" rx="5" fill="#1c2333" stroke="rgba(88,166,255,0.2)" stroke-width="1"/>
+<text x="658" y="163" text-anchor="middle" font-size="7.5" fill="#58a6ff" opacity="0.8">Convolution</text>
+<text x="658" y="175" text-anchor="middle" font-size="7" fill="#58a6ff" opacity="0.55">kernel 3×3 → 7×7</text>
+<text x="658" y="185" text-anchor="middle" font-size="7" fill="#6e7681" opacity="0.7">local receptive field</text>
+
+</svg>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- STEP CARDS                                           -->
+<!-- ═══════════════════════════════════════════════════ -->
+
+<!-- 0. Metadata -->
+<div class="step" style="border-color:color-mix(in srgb,var(--gold) 35%,transparent)">
+  <div class="flow">
+    <div class="inputs-side">
+      <div class="inp-block">
+        <div class="inp-name">📦 data_pipeline.pkl</div>
+        <div class="box-ref" style="color:#e3b341;border-color:#e3b341;background:color-mix(in srgb,#e3b341 10%,transparent)">feeds → 4  6  8</div>
+        <div class="inp-shape">ذخیره‌شده از 01_data.ipynb</div>
+        <div class="inp-detail">NUM_L1 · NUM_L2 · CONCEPT_NAMES · attr_parent_idx</div>
+      </div>
+    </div>
+    <div class="arrow-col">→</div>
+    <div class="outputs-side">
+      <div><span class="v-chip gold">NUM_L1 = 13</span><div class="v-usage">تعداد خروجی coarse head</div></div>
+      <div><span class="v-chip gold">NUM_L2 = 312</span><div class="v-usage">تعداد خروجی fine head</div></div>
+      <div><span class="v-chip gold">attr_parent_idx</span><div class="v-usage">در Masked Fine Head · register_buffer</div></div>
+    </div>
+  </div>
+  <div class="desc">
+    <p>قبل از ساختن مدل، metadata ذخیره‌شده از <code>01_data.ipynb</code> را می‌خوانیم تا معماری مدل دقیقاً با ساختار واقعی دیتاست هماهنگ باشد.</p>
+    <p><code>attr_parent_idx</code> با <code>register_buffer</code> در مدل ذخیره می‌شود — جزو وزن‌های trainable نیست، اما همراه مدل روی CPU/GPU جابه‌جا می‌شود و هنگام save/load باقی می‌ماند.</p>
+  </div>
+</div>
+
+<div class="connector"><div class="conn-line"></div></div>
+
+<!-- 1. Backbone -->
+<div class="step" style="border-color:color-mix(in srgb,var(--blue) 35%,transparent)">
+  <div class="flow">
+    <div class="inputs-side">
+      <div class="inp-block">
+        <div class="inp-name">🖼 image</div>
+        <div class="box-ref" style="color:#58a6ff;border-color:#58a6ff;background:color-mix(in srgb,#58a6ff 10%,transparent)">Box 1  2  3</div>
+        <div class="inp-shape">(B, 3, 336, 336)</div>
+      </div>
+      <div class="inp-block">
+        <div class="inp-name">🧱 ResNet-50</div>
+        <div class="inp-shape">pretrained ImageNet · fc removed</div>
+        <div class="inp-detail">feature extractor — نه classifier · 25M params</div>
+        <div class="inp-detail">GlobalAvgPool + Dropout(0.3) در انتها</div>
+      </div>
+    </div>
+    <div class="arrow-col">→</div>
+    <div class="outputs-side">
+      <div><span class="v-chip blue">features</span><div class="v-type">(B, 2048)</div><div class="v-usage">ورودی هم coarse head هم fine head</div></div>
+    </div>
+  </div>
+  <div class="desc">
+    <p>یک <b>ResNet-50 pretrained روی ImageNet</b> به‌عنوان feature extractor استفاده می‌شود. لایه آخر (<code>fc</code>) حذف می‌شود و بعد از <code>GlobalAvgPool</code> و <code>Dropout(0.3)</code>، خروجی یک بردار <b>2048تایی</b> است.</p>
+    <p>ResNet با convolution کار می‌کند: یک kernel (۳×۳ تا ۷×۷) روی تصویر slide می‌کند و فقط همسایه‌های محلی هر پیکسل را می‌بیند. رابطه بین نقاط دور لایه‌به‌لایه منتقل می‌شود.</p>
+    <p>این بردار هم به coarse head و هم به fine head داده می‌شود — دو مسیر موازی از همین features شروع می‌شوند.</p>
+    <div class="note blue"><b>Backbone در Phase 1 و 2 freeze است.</b> در Phase 3 unfreeze می‌شود با <code>BACKBONE_LR = 5e-5</code>. این برخلاف ViT نیست — هر دو مدل backbone را در Phase 1/2 freeze می‌کنند. تفاوت فقط در LR Phase 3 است (ResNet: 5e-5 | ViT: ~1e-6).</div>
+  </div>
+</div>
+
+<div class="connector"><div class="conn-line"></div></div>
+
+<!-- 2. Coarse Head -->
+<div class="step" style="border-color:color-mix(in srgb,var(--purple) 35%,transparent)">
+  <div class="flow">
+    <div class="inputs-side">
+      <div class="inp-block">
+        <div class="inp-name">features</div>
+        <div class="box-ref" style="color:#bc8cff;border-color:#bc8cff;background:color-mix(in srgb,#bc8cff 10%,transparent)">Box 4  5</div>
+        <div class="inp-shape">(B, 2048)</div>
+      </div>
+      <div class="inp-block">
+        <div class="inp-name">🧩 coarse_head</div>
+        <div class="inp-shape">Linear(2048→256) → BN → ReLU → Dropout(0.2) → Linear(256→13)</div>
+        <div class="inp-detail">hidden dim 256 · BatchNorm برای پایداری آموزش</div>
+      </div>
+    </div>
+    <div class="arrow-col">→</div>
+    <div class="outputs-side">
+      <div><span class="v-chip purple">p_c</span><div class="v-type">(B, 13) · sigmoid</div><div class="v-usage">ورودی fine head (concat) + L1 concept loss</div></div>
+    </div>
+  </div>
+  <div class="desc">
+    <p><b>coarse_head کل feature_map (2048تایی) را می‌گیرد</b> و می‌پرسد: از ۱۳ concept کلی (back، belly، bill، breast، crown، eye، forehead، leg، nape، tail، throat، underparts، wing) کدام‌ها در این تصویر وجود دارند؟</p>
+    <p>خروجی آن <code>p_c</code> است — یک بردار ۱۳تایی که هر عدد نشان می‌دهد آن concept با چه احتمالی در تصویر حضور دارد. مثلاً: <code>bill=0.91 · wing=0.87 · tail=0.12</code></p>
+    <div class="note purple"><b>Phase 1 — Joint Heads:</b> backbone freeze است. coarse_head + fine_head + classifier همه با هم آموزش می‌بینند. loss: <code>λ_c·L_coarse + λ_f·L_fine + 0.1·L_task</code>. وزن کوچک L_task از همان ابتدا concept‌ها را discriminative می‌کند.</div>
+  </div>
+</div>
+
+<div class="connector"><div class="conn-line"></div></div>
+
+<!-- 3. Fine Head -->
+<div class="step" style="border-color:color-mix(in srgb,var(--green) 35%,transparent)">
+  <div class="flow">
+    <div class="inputs-side">
+      <div class="inp-block">
+        <div class="inp-name">concat [ features , p_c ]</div>
+        <div class="box-ref" style="color:#3fb950;border-color:#3fb950;background:color-mix(in srgb,#3fb950 10%,transparent)">Box 6  7</div>
+        <div class="inp-shape">(B, 2048 + 13) = (B, 2061)</div>
+        <div class="inp-detail">feature خام + آگاهی از concept</div>
+      </div>
+      <div class="inp-block">
+        <div class="inp-name">🔬 fine_head</div>
+        <div class="inp-shape">Linear(2061→512) → BN → ReLU → Dropout(0.4) → Linear(512→312)</div>
+      </div>
+    </div>
+    <div class="arrow-col">→</div>
+    <div class="outputs-side">
+      <div><span class="v-chip green">p_f_raw</span><div class="v-type">(B, 312) · sigmoid</div><div class="v-usage">ورودی Masked Fine Head</div></div>
+    </div>
+  </div>
+  <div class="desc">
+    <p><b>fine_head هم کل feature_map (2048تایی) را می‌گیرد</b> و می‌پرسد: از ۳۱۲ attribute جزئی کدام‌ها وجود دارند؟ ابتدا feature و p_c concatenate می‌شوند: <code>2048 + 13 = 2061</code>.</p>
+    <p>یک تفاوت مهم با coarse_head دارد: <b>خروجی coarse_head یعنی <code>p_c</code> را هم کنار feature_map می‌گیرد.</b> یعنی fine_head از قبل می‌داند bill با احتمال ۰.۹۱ در تصویر هست — پس راحت‌تر می‌تواند بگوید has_bill_color::red هست یا نه.</p>
+    <p>خروجی آن <code>p_f_raw</code> است — یک بردار ۳۱۲تایی از probabilityهای خام، قبل از اعمال hierarchy.</p>
+    <div class="note green"><b>چرا feature + p_c؟</b> اگر fine_head فقط feature را می‌دید، هر attribute مستقل از concept parent خودش پیش‌بینی می‌شد و hierarchy رعایت نمی‌شد. با p_c، fine_head context دارد و دقیق‌تر عمل می‌کند.</div>
+  </div>
+</div>
+
+<div class="connector"><div class="conn-line"></div></div>
+
+<!-- 4. Masked Fine Head -->
+<div class="step" style="border-color:color-mix(in srgb,var(--orange) 35%,transparent)">
+  <div class="flow">
+    <div class="inputs-side">
+      <div class="inp-block">
+        <div class="inp-name">p_f_raw  +  p_c[parent_idx]</div>
+        <div class="box-ref" style="color:#f0883e;border-color:#f0883e;background:color-mix(in srgb,#f0883e 10%,transparent)">Box 8</div>
+        <div class="inp-shape">(B, 312) &nbsp;×&nbsp; mask(B, 312)</div>
+        <div class="inp-detail">attr_parent_idx از register_buffer</div>
+      </div>
+    </div>
+    <div class="arrow-col">→</div>
+    <div class="outputs-side">
+      <div><span class="v-chip orange">p_f</span><div class="v-type">(B, 312) · hierarchy enforced</div><div class="v-usage">ورودی classifier + L2 attribute loss</div></div>
+    </div>
+  </div>
+  <div class="desc">
+    <p><b>Masked Fine Head یک عملیات ساده است، نه یک شبکه.</b> <code>p_f_raw</code> را می‌گیرد و هر attribute را در احتمال parent آن ضرب می‌کند:</p>
+    <div class="formula">p_f[i] = p_f_raw[i]  ×  p_c[ parent(i) ]</div>
+    <p><b>مثال:</b> اگر <code>bill = 0.1</code> (یعنی bill تقریباً نیست)، پس:</p>
+    <div class="formula">has_bill_color::red  =  0.9 × 0.1  =  0.09</div>
+    <p><b>نتیجه کلیدی:</b> اگر <code>p_c</code> برای یک concept کم باشد، تمام <code>p_f</code>های زیرمجموعه‌اش هم قطعاً کم می‌شوند — صرف نظر از اینکه <code>p_f_raw</code> چقدر باشد.</p>
+    <div class="note orange"><b>constraint معماری سخت:</b> مدل نمی‌تواند این قانون را نادیده بگیرد — ریاضیات اجازه نمی‌دهد. این چیزی نیست که مدل یاد می‌گیرد، از ابتدا enforce است.</div>
+  </div>
+</div>
+
+<div class="connector"><div class="conn-line"></div></div>
+
+<!-- 5. Classifier -->
+<div class="step" style="border-color:color-mix(in srgb,var(--pink) 35%,transparent)">
+  <div class="flow">
+    <div class="inputs-side">
+      <div class="inp-block">
+        <div class="inp-name">p_f</div>
+        <div class="box-ref" style="color:#f778ba;border-color:#f778ba;background:color-mix(in srgb,#f778ba 10%,transparent)">Box 9  10</div>
+        <div class="inp-shape">(B, 312)</div>
+        <div class="inp-detail">فقط p_f — بدون دسترسی به feature خام ResNet</div>
+      </div>
+      <div class="inp-block">
+        <div class="inp-name">🎯 classifier</div>
+        <div class="inp-shape">Linear(312 → 200)</div>
+        <div class="inp-detail">یک لایه linear ساده — عمداً پیچیده نیست</div>
+      </div>
+    </div>
+    <div class="arrow-col">→</div>
+    <div class="outputs-side">
+      <div><span class="v-chip pink">cls_logits</span><div class="v-type">(B, 200)</div><div class="v-usage">در classification loss و evaluation</div></div>
+    </div>
+  </div>
+  <div class="desc">
+    <p>classifier نهایی فقط <code>p_f</code> را می‌بیند و <b>مستقیم به feature خام ResNet دسترسی ندارد</b>. این همان <b>bottleneck</b> اصلی مدل است که تفسیرپذیری را ممکن می‌کند.</p>
+    <div class="note purple"><b>Phase 2 — Calibration:</b> backbone و heads همه freeze هستند. فقط classifier آموزش می‌بیند — روی <b>predicted p_f</b> (نه GT!). این «calibration trick» است: classifier از همان توزیعی آموزش می‌بیند که در inference می‌بیند. بدون این trick، Phase 3 از epoch اول collapse می‌کند. max <b>50 epoch</b>. loss: فقط <code>L_task</code>.</div>
+    <div class="note pink"><b>چرا تفسیرپذیر است؟</b> وزن‌های classifier یک ماتریس ۳۱۲×۲۰۰ است. می‌توان دید برای تشخیص «American Goldfinch» بیشترین وزن به <code>has_bill_color::yellow</code> و <code>has_wing_color::yellow</code> تعلق دارد — دقیقاً همان چیزی که یک متخصص پرندگان می‌گوید.</div>
+  </div>
+</div>
+
+<div class="connector" style="padding-bottom:0"><div class="conn-line"></div><span>خروجی‌های forward pass</span></div>
+
+<!-- Final -->
+<div class="final-block">
+  <div class="final-title">⟶ Forward Pass — خلاصه · ResNet-50</div>
+  <div class="code-block"><span class="c"># image (336×336) → ResNet-50 → features (2048) → دو مسیر موازی</span>
+cls_logits, p_c, p_f = model(imgs)
+
+<span class="c"># imgs       : (B,  3, 336, 336)  ← سایز ResNet branch</span>
+<span class="c"># features   : (B, 2048)          ← بردار feature ResNet</span>
+<span class="c"># concat     : (B, 2061)          ← 2048 + 13 = 2061</span>
+<span class="c"># cls_logits : (B,  200)          ← logit کلاس نهایی    ← classification loss</span>
+<span class="c"># p_c        : (B,   13)          ← prob L1 concept       ← L1 concept loss</span>
+<span class="c"># p_f        : (B,  312)          ← prob L2 attr (masked) ← L2 attribute loss</span>
+</div>
+
+  <div style="margin-top:18px;">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#58a6ff;margin-bottom:10px;">راهنمای ۳ فاز آموزش — ResNet-50</div>
+    <table class="phase-table">
+      <thead>
+        <tr>
+          <th>Phase</th>
+          <th>چی train میشه</th>
+          <th>Backbone</th>
+          <th>Loss</th>
+          <th>Max Epoch</th>
+          <th>Early Stop</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="color:#bc8cff;">1</td>
+          <td style="color:#bc8cff;">Coarse + Fine + Classifier</td>
+          <td style="color:#f0883e;">🔒 Frozen</td>
+          <td style="color:#6e7681;">λ_c·L_c + λ_f·L_f + 0.1·L_t</td>
+          <td style="color:#6e7681;">100</td>
+          <td style="color:#6e7681;">val_loss · pat=20</td>
+        </tr>
+        <tr>
+          <td style="color:#f0883e;">2</td>
+          <td style="color:#f0883e;">Classifier only (predicted p_f)</td>
+          <td style="color:#f0883e;">🔒 Frozen</td>
+          <td style="color:#6e7681;">L_task</td>
+          <td style="color:#6e7681;">50</td>
+          <td style="color:#6e7681;">val_loss · pat=30</td>
+        </tr>
+        <tr>
+          <td style="color:#f778ba;">3</td>
+          <td style="color:#f778ba;">همه — Joint Fine-Tune · MixUp(α=0.2)</td>
+          <td style="color:#3fb950;">🔓 lr=5e-5</td>
+          <td style="color:#6e7681;">2·L_c + 2·L_f + 1·L_t</td>
+          <td style="color:#6e7681;">200</td>
+          <td style="color:#f778ba;font-weight:600;">val_acc · pat=30</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div><!-- page -->
+</body>
+</html>
