@@ -1,0 +1,315 @@
+\documentclass[10pt,conference,twocolumn,a4paper]{article}
+
+\usepackage[margin=1.8cm]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, citecolor=blue!50!black,
+            urlcolor=blue!50!black}
+
+\titlespacing*{\section}{0pt}{0.7\baselineskip}{0.25\baselineskip}
+\titlespacing*{\subsection}{0pt}{0.5\baselineskip}{0.15\baselineskip}
+\setlist{nosep,leftmargin=1.1em}
+\setlength{\columnsep}{0.7cm}
+\setlength{\parskip}{2pt}
+\setlength{\abovecaptionskip}{2pt}
+\setlength{\belowcaptionskip}{0pt}
+
+\title{\vspace{-2em}\textbf{P1 -- Hierarchical Concept-Based Explainable-by-Design Models:\\
+A Two-Backbone Study on CUB-200-2011}}
+\author{Sina Aghakhani \\
+\small Explainable and Trustworthy AI -- Politecnico di Torino, A.Y.\ 2025/2026 \\
+\small Reference teachers: Eliana Pastor, Eleonora Poeta}
+\date{\vspace{-1.5em}}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}\small
+We address project P1 by designing a Hierarchical Concept Bottleneck Model
+(H-CBM) in which the 312 fine attributes of CUB-200-2011 are not a flat set
+but are explicitly organised under 13 coarse body parts. Hierarchy is enforced
+\emph{architecturally} through a multiplicative parent-conditioned gate that
+is identical at training and inference, removing the need for soft consistency
+penalties. We instantiate the same H-CBM on two backbones (ResNet-50 and
+ViT-B/16) and run an identical interpretability suite on both: per-attribute
+AUC, class-prototype oracle, test-time intervention (TTI), per-part causal
+necessity, calibration, classifier-weight structure and pairwise agreement.
+ViT reaches 86.56\% top-1 vs.\ 61.94\% for ResNet, with smaller
+class-prototype oracle gap (13.4 vs.\ 35.0~pp), better calibration
+(ECE 0.126 vs.\ 0.180) and a strictly monotone TTI curve
+($61.9{\to}96.9\%$ ResNet, $86.6{\to}100.0\%$ ViT). Per-attribute analysis
+shows ViT systematically wins on shape/size and rare colours
+(\emph{rufous, purple}), ResNet wins on a few common colours
+(\emph{pink, green eye/throat}). Cohen's $\kappa{=}0.632$ and an
+oracle-selection ensemble ceiling of 89.21\% indicate genuine
+complementarity rather than redundancy.
+\end{abstract}
+
+\section{Project goal and deliverables}
+The project brief~\cite{p1brief} requires:\
+(D1) a literature review on concept-bottleneck and hierarchical
+interpretable models;\
+(D2) the identification of research gaps in current concept-based XAI;\
+(D3) an implementation that introduces hierarchy into the prediction
+pathway, with coarse concepts \emph{supporting} fine ones; and\
+(D4) an evaluation that combines predictive accuracy, concept quality and
+hierarchy-aware analyses. We satisfy each deliverable as follows.
+
+\subsection{D1 -- Literature review}
+We surveyed CBMs~\cite{koh2020}, hierarchical CBMs~\cite{pittino2023,sun2024},
+hierarchical prototypes~\cite{hase2019}, mistake-severity
+metrics~\cite{bertinetto2020} and concept-based XAI taxonomies~\cite{poeta2025},
+plus the supporting tools we used: Focal Loss~\cite{lin2017} and
+multi-task uncertainty weighting~\cite{kendall2018}.
+
+\subsection{D2 -- Research gaps}
+Four gaps are addressed by the design (Tab.~\ref{tab:gaps}): flat concept
+sets, soft-only coarse-to-fine constraints, lack of hierarchy-aware
+evaluation, and classifier leakage that bypasses the bottleneck.
+\begin{table}[h]
+\centering\footnotesize
+\begin{tabular}{@{}p{0.07\linewidth}p{0.40\linewidth}p{0.40\linewidth}@{}}
+\toprule
+\textbf{Gap} & \textbf{Prior best} & \textbf{Our solution}\\
+\midrule
+G1 & flat concept list~\cite{koh2020} & 13/312 hierarchy parsed from attribute names; no extra labels\\
+G2 & soft consistency loss~\cite{pittino2023} & multiplicative gate inside forward pass\\
+G3 & top-1 only & paired suite: AUC, oracle, TTI, part-necessity, ECE, $W$-structure\\
+G4 & joint training, side-channel & strict $\mathrm{Linear}(312{\to}200)$, sequential 3-phase training\\
+\bottomrule
+\end{tabular}
+\caption{Mapping from research gaps to architectural / evaluation choices.}
+\label{tab:gaps}
+\end{table}
+
+\subsection{D3 -- Implementation}
+\textbf{Dataset (notebook~01).} CUB-200-2011, 11{,}788 images, 200 species,
+stratified into train / val / test splits of 5{,}394 / 600 / 5{,}794. The
+312 binary attributes are kept only at certainty $\geq 3$
+(${\sim}259$ trusted attributes per image on average).
+
+\noindent\textbf{Hierarchy.} The 312 attributes are deterministically parsed
+by prefix into 13 body parts (\texttt{back, belly, bill, breast, crown, eye,
+forehead, head, leg, nape, tail, throat, wing}) with $\{34, 34, 27, 19, 15,
+14, 15, 11, 15, 15, 40, 15, 24\}$ children respectively; 34 global
+attributes (\texttt{shape}, \texttt{size}, \dots) have no parent and are
+masked with $1$. Part labels are the OR-aggregation of their children, so
+\emph{no extra annotation is required}.
+
+\noindent\textbf{Architecture.} Given backbone features $F$, a coarse head
+produces $p_c\in[0,1]^{13}$ and a fine head $p_{f,\text{raw}}\in[0,1]^{312}$.
+The hierarchy is enforced by the \emph{same} gate at train and test:
+\begin{equation}
+p_f[i] \;=\; \sigma(z_f[i]) \cdot \bigl(0.5 + 0.5\,p_c[\mathrm{parent}(i)]\bigr).
+\label{eq:mask}
+\end{equation}
+The classifier is a single linear layer
+$\hat{y}=\mathrm{softmax}(W p_f + b)$, $W\in\mathbb{R}^{200\times 312}$,
+with no residual side-channel from $F$.
+
+The gate in (\ref{eq:mask}) is in $[0.5,1]$ rather than $[0,1]$ on purpose:
+a hard $\times p_c[\mathrm{parent}]$ collapses children to zero whenever
+$p_c\!\approx\!0.5$ early in training and the fine head never recovers;
+the soft form keeps gradients alive while still imposing a parent-conditioned
+ceiling. Crucially, training and inference use the \emph{same} formula, so
+the classifier never sees out-of-distribution $p_f$ values at test time.
+
+\noindent\textbf{Training (3 phases).} Phase~1 trains the heads on a frozen
+backbone with $\lambda_c L_{\text{coarse}} + \lambda_f L_{\text{fine}} +
+0.1\,L_{\text{task}}$ (weighted BCE / Focal Loss / CE-LS). Phase~2 calibrates
+\emph{only} the classifier on the model's own \emph{predicted}~$p_f$ to
+match the test-time distribution. Phase~3 jointly fine-tunes everything
+with concept-dominant weights ($2/2/1$) and MixUp~$\alpha{=}0.2$. The
+backbone uses an order-of-magnitude lower LR than the heads; for ViT-SWAG
+the backbone LR is reduced further (1e-6) to preserve attention features.
+
+\noindent\textbf{Two backbones, identical heads.} We instantiate the same
+H-CBM on ResNet-50 (336\,px input, ImageNet-V2; best at epoch 127, val
+64.17\%) and ViT-B/16 (384\,px, SWAG-E2E; 86.1\,M backbone + 0.82\,M head
+parameters, best at epoch 66, val 86.50\%). Everything above the backbone
+-- the 13/312 hierarchy, both heads, the gate in (\ref{eq:mask}), the
+linear classifier -- is byte-identical, so any observed difference is
+attributable solely to the backbone choice.
+
+\subsection{D4 -- Evaluation}
+The two trained models are loaded into a shared evaluation harness
+(notebook~04) which builds one paired cache and runs nine identical analyses.
+Two methodological points required care.
+
+\noindent\textbf{(i) Class-prototype oracle, not raw GT.} The classifier is
+trained on continuous \emph{predicted} $p_f$. Empirically the gap between
+attribute-present and attribute-absent activations is small: on ResNet,
+$\mathbb{E}[p_f\mid y{=}1]{=}0.395$ vs.\ $\mathbb{E}[p_f\mid y{=}0]{=}0.287$
+(gap $+0.107$ only), so most class-discriminative signal lives in the
+continuous noise pattern, not in binary attribute identity. Feeding raw
+$\{0,1\}$ ground truth as a fake oracle is therefore out-of-distribution and
+collapses to $\approx\!11\%$ on both backbones (10.51\% R, 11.89\% V). The
+honest ceiling is the class-prototype oracle
+$\mathrm{proto}[k]=\mathbb{E}_{i:y_i=k}[p_f(x_i)]$, which lives exactly on
+the training distribution.
+
+\noindent\textbf{(ii) TTI by mixing toward the prototype.} Section~5 mixes
+$p_f$ with $\mathrm{proto}[y]$ over fractions
+$r\in\{0,0.1,0.25,0.5,0.75,1\}$ (3 random seeds per fraction): $r{=}0$
+recovers actual accuracy, $r{=}1$ recovers the oracle. A monotonically
+rising curve is the genuine evidence that the head listens to the concept
+layer.
+
+\noindent\textbf{(iii) Per-part necessity by zeroing child columns.} Because
+the gate (\ref{eq:mask}) is in $[0.5,1]$, setting $p_c[p]{=}0$ only halves
+the part's children. The honest ablation is to zero the corresponding
+columns of $p_f$, which removes the branch from $W p_f$ entirely.
+
+\section{Quantitative results}
+Table~\ref{tab:headline} reports the verdict produced by notebook~04 on the
+CUB test split ($N{=}5794$).
+
+\noindent\textbf{Concept fidelity (\S3).} The 312 per-attribute AUC
+distributions overlap heavily: the means are 0.636 vs.\ 0.656. Both models
+share the same easy/hard pattern -- yellow body colours top the AUC ranking
+on both backbones (0.87--0.91), while pink/purple colours and rare shapes
+sit at the bottom (0.36--0.46) -- a direct consequence of CUB's class
+imbalance on these attributes. ViT systematically wins on shape/size
+(\texttt{shape:owl-like} +0.27, \texttt{size:very\_large} +0.20) and rare
+colours (\texttt{bill\_color:rufous} +0.32, \texttt{under\_tail:purple}
++0.28); ResNet wins on a small set of common colours
+(\texttt{eye\_color:green} $-$0.26, \texttt{throat:pink} $-$0.23). The
+asymmetry is concept-localised, not uniform.
+
+\noindent\textbf{Causal control (\S5).} TTI is strictly monotone for both
+backbones (Tab.~\ref{tab:tti}), and each curve reaches its own
+class-prototype oracle at $r{=}1$ by construction, confirming that the
+entire decision is a faithful function of the 312-dim bottleneck.
+
+\begin{table}[h]
+\centering\footnotesize
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{@{}rrr@{}}
+\toprule
+$r$ (\% replaced) & ResNet-50 & ViT-B/16 \\
+\midrule
+0\,\%   & 61.94 & 86.56 \\
+10\,\%  & 66.18 & 88.54 \\
+25\,\%  & 72.94 & 91.27 \\
+50\,\%  & 85.07 & 95.79 \\
+75\,\%  & 93.48 & 98.88 \\
+100\,\% & 96.91 & 100.00 \\
+\bottomrule
+\end{tabular}
+\caption{TTI accuracy (\%) when a fraction $r$ of $p_f$ columns is replaced
+by the in-class prototype, mean over 3 seeds.}
+\label{tab:tti}
+\end{table}
+
+\noindent\textbf{Complementarity (\S9).} ViT is uniquely correct on $1{,}580$
+images, ResNet on $154$, both wrong on $625$ -- so each model still has
+recoverable errors. Cohen's $\kappa{=}0.632$ confirms the disagreements are
+not trivial. ResNet's unique strengths cluster on large seabirds
+(albatrosses, gulls); ViT's on small passerines (warblers, vireos,
+flycatchers, sparrows), a backbone-specific signal that survives the
+shared concept layer.
+
+\begin{table}[h]
+\centering\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+\textbf{axis} & \textbf{ResNet-50} & \textbf{ViT-B/16} & \textbf{winner}\\
+\midrule
+top-1 acc (\%)            & 61.94  & \textbf{86.56}  & ViT \\
+mean per-class acc (\%)   & 62.13  & \textbf{86.64}  & ViT \\
+NLL                       & 1.459  & \textbf{0.697}  & ViT \\
+mean attr-AUC             & 0.636  & \textbf{0.656}  & ViT \\
+attr ECE                  & 0.180  & \textbf{0.126}  & ViT \\
+attr Brier                & 0.154  & \textbf{0.112}  & ViT \\
+oracle acc (\%)           & 96.91  & \textbf{100.00} & ViT \\
+gap oracle$-$actual (pp)  & $+34.97$ & \textbf{$+13.44$} & ViT \\
+$W$ sparsity (L1/L2)      & \textbf{14.50} & 14.72  & ResNet \\
+$W$ part Herfindahl       & \textbf{0.093} & 0.092  & ResNet \\
+$\sum$ part-drops (pp)    & \textbf{6.52}  & 6.45   & ResNet \\
+\midrule
+\multicolumn{4}{c}{axes-won score: \textbf{ResNet=4, ViT=7}}\\
+\bottomrule
+\end{tabular}
+\caption{Final verdict, paired evaluation on the CUB test split.}
+\label{tab:headline}
+\end{table}
+
+\section{Discussion and conclusion}\label{sec:disc}
+\textbf{Interpretability of the bottleneck holds.} For \emph{both} models the
+TTI curve is strictly monotone and reaches the prototype-oracle ceiling at
+$r{=}1$, which means the entire decision is a faithful function of the 312
+concepts -- there is no shortcut around the bottleneck.
+
+\noindent\textbf{ViT's gain is in how it \emph{uses} concepts.} The mean
+attribute-AUC differs only by 2~points (0.656 vs.\ 0.636), but the oracle
+gap differs by 21.5~pp. Concepts are not dramatically more accurate on ViT;
+ViT's classifier is much closer to its own ceiling, suggesting the
+backbone shapes the $p_f$ distribution into a form on which a linear head
+can separate fine-grained species. The $100.00\%$ ViT oracle is partly an
+artefact of evaluating an already-strong classifier on its own in-class
+average $p_f$ -- with $\sim\!30$ test images per class the prototype is a
+clean class signature -- which is why we report the gap rather than the
+absolute value as the headline number.
+
+\noindent\textbf{ResNet leaves headroom on the table.} A 35-pp oracle gap
+combined with monotone TTI tells us that the dominant remaining error is
+in the concept extractor itself; concept-improvement (better backbones,
+attention-pooled features) would translate almost one-for-one into accuracy.
+
+\noindent\textbf{Per-part reliance is qualitatively similar.} Both models
+list \texttt{bill}, \texttt{tail} and \texttt{belly} in their top-3
+most-necessary parts (max drop 1.40~pp ResNet, 1.09~pp ViT;
+$\sum$~drops $\approx\!6.5$~pp for both). The $W$ matrices show comparable
+sparsity ($\sim\!14.5$ L1/L2) and almost identical part-Herfindahl ($\approx 0.09$),
+so the species \emph{definitions} learned on top of the two backbones are
+structurally close, and the accuracy gap is not explained by one model
+``cheating'' through a more concentrated $W$. As an additional
+sanity check, the closest pairs in concept space recovered
+\emph{independently} on both backbones are taxonomically meaningful
+(\textit{Common Tern}\,$\leftrightarrow$\,\textit{Forster's Tern},
+\textit{California Gull}\,$\leftrightarrow$\,\textit{Herring Gull},
+\textit{Loggerhead}\,$\leftrightarrow$\,\textit{Great Grey Shrike}),
+showing that the bottleneck has internalised genuine ornithological
+structure.
+
+\noindent\textbf{Complementarity.} The oracle ensemble gains $+2.65$~pp
+over the better single model, and the per-class only-correct lists are
+species-specific (warblers, vireos, sparrows favour ViT; large gulls and
+albatrosses favour ResNet), suggesting the two backbones extract
+complementary inductive biases that the concept layer surfaces in a
+human-readable way.
+
+\noindent\textbf{Conclusion.} An H-CBM with an architecturally enforced
+parent-conditioned gate, a strict linear bottleneck and a sequential
+training schedule satisfies all four deliverables of P1: it adds explicit
+hierarchy without extra labels, evaluates concept fidelity and causal
+control with hierarchy-aware metrics, and remains directly comparable
+across backbones. ViT-B/16 is the better backbone for this design on CUB,
+but ResNet-50 produces equivalently \emph{interpretable} structure --
+the bottleneck pays off for both.
+
+\bibliographystyle{IEEEtran}
+\begin{thebibliography}{9}\footnotesize
+\bibitem{koh2020} P.W.\ Koh \emph{et al.}, ``Concept Bottleneck Models,'' \emph{ICML}, 2020.
+\bibitem{pittino2023} F.\ Pittino \emph{et al.}, ``Hierarchical CBM for Vision,'' \emph{EAAI}, 2023.
+\bibitem{sun2024} X.\ Sun \emph{et al.}, ``Supervised Hierarchical CBM,'' under review, 2024.
+\bibitem{poeta2025} E.\ Poeta \emph{et al.}, ``Concept-based XAI: A Survey,'' \emph{ACM CSUR}, 2025.
+\bibitem{hase2019} P.\ Hase \emph{et al.}, ``Interpretable Image Recognition with Hierarchical Prototypes,'' \emph{AAAI HCOMP}, 2019.
+\bibitem{bertinetto2020} L.\ Bertinetto \emph{et al.}, ``Making Better Mistakes,'' \emph{CVPR}, 2020.
+\bibitem{lin2017} T.-Y.\ Lin \emph{et al.}, ``Focal Loss for Dense Object Detection,'' \emph{ICCV}, 2017.
+\bibitem{kendall2018} A.\ Kendall \emph{et al.}, ``Multi-Task Learning Using Uncertainty,'' \emph{CVPR}, 2018.
+\bibitem{p1brief} ``P1 -- Hierarchical Concept-Based Explainable-by-Design Models,'' XAI Course brief, PoliTo, 2025/2026.
+\end{thebibliography}
+
+\end{document}

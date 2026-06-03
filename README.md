@@ -5,650 +5,379 @@
 
 ---
 
-## Overview
+## What this project does (in one paragraph)
 
-This project implements a **Hierarchical Concept Bottleneck Model (H-CBM)** for explainable bird species classification on the [CUB-200-2011](https://data.caltech.edu/records/65de6-vp158) dataset.
+We classify bird species from the [CUB-200-2011](https://data.caltech.edu/records/65de6-vp158) dataset (200 classes, ~12k images), but we do it in a way that a human can read. Instead of going straight from pixels to a class name, the model first answers two human-friendly questions:
 
-Unlike standard black-box classifiers, H-CBM expresses every prediction through two levels of human-understandable concepts:
+1. **Which body parts can I see?** — 13 parts (bill, wing, tail, …)
+2. **For each visible part, what does it look like?** — 312 fine attributes (e.g. `bill_shape::dagger`, `wing_color::brown`)
+
+Only then does it pick one of the 200 species. The final classifier is a single `Linear(312 → 200)` layer that sees **only** the 312 attribute probabilities — never the raw image features. So every prediction is fully explained by a small, named vector of concepts.
 
 ```
-Image -> [bill  wing  tail]                      <- Level 1: body parts (13)
-      -> [bill_shape_dagger  wing_color_brown ...]  <- Level 2: fine attributes (312)
-      -> Acadian Flycatcher
+Image → [bill, wing, tail, …]                             ← Level 1: 13 body parts
+      → [bill_shape::dagger, wing_color::brown, …]        ← Level 2: 312 fine attributes
+      → Acadian Flycatcher                                ← Level 3: species (Linear from 312)
 ```
 
-A key architectural constraint — the **Masked Fine Head** — ensures that if a body part is predicted absent, none of its child attributes can be active. This enforces hard hierarchical consistency at both training and inference time.
+A key rule called the **Masked Fine Head** ties every fine attribute to the probability of its parent body part through a multiplicative gate that is applied **identically at training and at inference**:
+
+$$p_f[i] = \sigma(z_f[i]) \;\times\; \bigl(0.5 + 0.5 \cdot p_c[\text{parent}(i)]\bigr)$$
+
+The gate is in `[0.5, 1]` rather than `[0, 1]` on purpose: a hard `× p_c[parent]` collapses children to zero very early in training when `p_c ≈ 0.5` and the fine head can never recover. The soft form keeps gradients alive while still guaranteeing a *parent-conditioned ceiling* — when `p_c[parent] → 0`, every child is multiplied by 0.5 (cannot exceed half), and when `p_c[parent] → 1` the child is unrestricted. The forward pass in `02 / 03 / 04` all use this exact same formula, so concepts at evaluation time are produced under the same constraint they were trained under.
 
 ---
 
-## Architecture
+## Two parallel models (this is NOT a pipeline)
+
+We did **not** build one model and then upgrade it. We built **two completely separate models** with the **same H-CBM design** but **different visual backbones**, trained them independently, explained each one in its own notebook, and then compared them in a final notebook. The whole point is the comparison.
 
 ```
-                  Input Image (3, 224, 224)
-                               |
-                               v
-       ResNet-50 (pretrained ImageNet, FC layer removed)
-                               |
-                     Feature Map F (2048,)
-                               |
-          +-----------------------------------------+
-          |                                         |
-          v                                         v
-  Coarse Head  g_c(F)                     Fine Head  g_f(F, p_c)
-  Linear(2048->512)                       concat([F, p_c]) -> (2061,)
-  ReLU -> Dropout(0.3)                    Linear(2061->512)
-  Linear(512->13)                         ReLU -> Dropout(0.3)
-          |                               Linear(512->312)
-  z_c  (13 logits)                                  |
-  p_c = sigmoid(z_c)                      z_f  (312 logits)
-          |                               p_f_raw = sigmoid(z_f)
-          |                               mask[i] = p_c[parent(i)]  <- Masked Fine Head
-          |                               p_f    = p_f_raw * mask    <- hard constraint
-          |                                         |
-          +-----------------------------------------+
-                               |
-                          p_f (312,)
-                               v
-                      Classifier  h(p_f)
-                       Linear(312->200)
-                               |
-                          200 species
+                ┌──────────────────────────────────────┐
+                │   01_data.ipynb                      │
+                │   Shared data prep                   │
+                │   (one notebook, used by both)       │
+                └──────────────┬───────────────────────┘
+                               │
+                ┌──────────────┴──────────────┐
+                ▼                             ▼
+   ┌────────────────────────┐     ┌────────────────────────┐
+   │  Branch A — ResNet-50  │     │  Branch B — ViT-B/16   │
+   │                        │     │                        │
+   │  02 ... train           │     │  03 ... train           │
+   │  02 ... explainability  │     │  03 ... explainability  │
+   └───────────┬────────────┘     └───────────┬────────────┘
+               │                              │
+               └──────────────┬───────────────┘
+                              ▼
+                ┌──────────────────────────────┐
+                │   04 ... Comparison           │
+                │   ResNet-50 vs ViT-B/16      │
+                │   (head-to-head, same data)  │
+                └──────────────────────────────┘
 ```
 
-### Key Design Decisions
+Both branches use:
+- the **same 13 coarse parts** and **same 312 fine attributes**,
+- the **same hierarchical mask**,
+- the **same final `Linear(312 → 200)` classifier** (no extra MLP, no shortcut features).
 
-| Principle | Description |
-|-----------|-------------|
-| **Masked Fine Head** | `p_f[i] = sigmoid(z_f[i]) * p_c[parent(i)]` — if a part is absent, all its child attributes are suppressed. Hard architectural constraint enforced at training and inference. |
-| **Bottleneck Property** | Classifier reads **only from `p_f` (312-dim)**, never from the backbone feature map. If the classifier also reads from raw features, concepts can be bypassed — an interpretability illusion. |
-| **L1 from attribute parsing** | 13 coarse concepts are derived by parsing attribute names, not hardcoded. `has_bill_shape::dagger` -> parent `bill`. Part Locations are used only for visibility masking in the loss. |
+Only the backbone changes. So any difference we see in the comparison notebook comes purely from the backbone choice.
+
+---
+
+## Files in this repo
+
+| # | File | What it does |
+|---|------|--------------|
+| 01 | `01_data.ipynb` | Loads CUB, builds the 13/312 hierarchy, makes train/val/test splits, saves two pickles (`data_pipeline_resnet.pkl` for the ResNet branch, `data_pipeline_vit.pkl` for the ViT branch). |
+| 02a | `02_H-CBM ResNet-50_train.ipynb` | Trains the H-CBM with a **ResNet-50** backbone. Saves `best_model.pth`. |
+| 02b | `02_H-CBM ResNet-50_explainability.ipynb` | Loads the ResNet-50 checkpoint and runs the full explanation suite (concept fidelity, oracle, TTI, per-part ablation, calibration, classifier weight inspection, etc.). |
+| 03a | `03_H-CBM ViT-B16_train.ipynb` | Trains the H-CBM with a **ViT-B/16** backbone. Saves `best_hcbm_vit_384.pth`. |
+| 03b | `03_H-CBM ViT-B16_explainability.ipynb` | Same explanation suite as 02b, but for the ViT model — plus the native CLS-token attention map, which ResNet cannot produce. |
+| 04 | `04_H-CBM Comparison ResNet-50 vs ViT-B16.ipynb` | Loads **both** trained models, runs the **same** evaluation on both, and reports head-to-head differences (accuracy, concept AUC, oracle gap, TTI curves, per-part necessity, calibration, classifier-weight structure, agreement matrix, final verdict table). |
+| — | `src/` | Reserved for shared utility modules. |
+
+The two branches are **independent**. You can run only branch A, or only branch B, and the explanation notebook for that branch will work on its own. Notebook 04 needs both checkpoints on disk.
+
+---
+
+## The H-CBM architecture (same skeleton in both branches)
+
+```
+        Input image
+             │
+             ▼
+   ┌──── Backbone ───────┐         ResNet-50  → 2048-dim pooled vector
+   │ (ResNet-50 OR ViT)  │         ViT-B/16   → 768-dim [CLS] token
+   └─────────┬───────────┘
+             │  features F
+   ┌─────────┴─────────────┐
+   ▼                       ▼
+ Coarse head g_c(F)     Fine head g_f(F, p_c)
+ → z_c (13 logits)      input = concat(F, p_c)
+ → p_c = σ(z_c)         → z_f (312 logits)
+                        → p_f_raw = σ(z_f)
+                        → mask[i] = 0.5 + 0.5·p_c[parent(i)]   ← Masked Fine Head
+                        → p_f = p_f_raw × mask              (parent-conditioned ceiling)
+             │
+             ▼
+       p_f (312-dim)
+             │
+             ▼
+   Classifier h(p_f) = Linear(312 → 200)
+             │
+             ▼
+       species (1 of 200)
+```
+
+| Block | Layers |
+|-------|--------|
+| Coarse head | `Linear(D → 256) → BN → ReLU → Dropout(0.2) → Linear(256 → 13)` |
+| Fine head   | `Linear(D+13 → 512) → BN → ReLU → Dropout(0.4) → Linear(512 → 312)` |
+| Classifier  | `Linear(312 → 200)` (kept linear on purpose — see below) |
+
+`D` is 2048 for ResNet-50 and 768 for ViT-B/16. Everything above the backbone is identical.
+
+### Why the classifier is a single `Linear` layer
+
+Because the whole point is interpretability. With a linear classifier, the weight `W[k, i]` is literally *“how much does attribute `i` count in favour of species `k`?”*. Any non-linear classifier on top of `p_f` would let the model invent hidden interactions that a human cannot read off the weights. So we keep the classifier linear in **both** branches.
+
+### Why no residual / shortcut path
+
+In some CBM papers the classifier also reads a side-channel directly from the backbone (a `W_r` term). We do **not** do this. The classifier sees only `p_f`. So if a concept is wrong, the prediction is wrong — there is no “escape route” around the bottleneck. This makes the explanations honest.
+
+---
+
+## Loss
+
+$$L_{\text{total}} = \lambda_c \, L_{\text{coarse}} + \lambda_f \, L_{\text{fine}} + \lambda_t \, L_{\text{task}}$$
+
+| Term | Formula | Mask |
+|------|---------|------|
+| `L_coarse` | Weighted BCE on `z_c` vs. the 13 L1 labels (`pos_weight = N_neg / N_pos` per part) | masked by per-image part visibility |
+| `L_fine`   | Focal Loss (α=0.25, γ=2) on `z_f` vs. the 312 L2 labels | masked by certainty ≥ 3 |
+| `L_task`   | Cross-Entropy with label smoothing (0.1) on the 200-way logits | none |
+
+Focal Loss is used for L_fine because most attributes are negative for most birds (`has_wing_color::pink` is positive for under 2 % of images), and plain BCE would just learn to predict zero everywhere.
+
+---
+
+## Training schedule (3 phases — same idea in both branches)
+
+| Phase | What is trainable | Loss | Why |
+|-------|-------------------|------|-----|
+| **1 — Joint heads** | Coarse head + Fine head + Classifier (backbone frozen) | `λ_c·L_coarse + λ_f·L_fine + 0.1·L_task` | Learn the 13/312 concept space on top of frozen features. Adding a small task term shapes the concepts to be discriminative for classification from the start. |
+| **2 — Calibration** | Classifier only (heads + backbone frozen) | `L_task` on the model’s **predicted** `p_f` | Crucial trick: the classifier sees predicted `p_f` (not the GT `l2`) so its training distribution matches what it will see in Phase 3. This fixes the “P3 collapses on epoch 1” bug that comes from training on GT concepts. |
+| **3 — Joint fine-tune** | Everything (backbone unfrozen) | `2·L_coarse + 2·L_fine + 1·L_task`, with **MixUp(α=0.2)** on Phase 3 batches | Refine end-to-end with concept-dominant weights and stronger weight decay so the model gently improves instead of overfitting in the first 10 epochs. |
+
+Other shared training details:
+- **Optimizer:** `AdamW` with two parameter groups (lower LR for the backbone, higher LR for the heads/classifier).
+- **Phase-3 schedule:** linear warmup (5 epochs) → cosine annealing.
+- **Hierarchical mask is soft at both training and inference:** `mask = 0.5 + 0.5 · p_c[parent]` (not 0/1) so child attributes do not collapse to zero early when `p_c` is still ~0.5, and so the eval-time concept distribution exactly matches what the classifier was trained on.
+- **Best checkpoint is saved by best `val_acc`**, not by `val_loss`, because the concept-dominant loss is no longer monotonic with accuracy.
+
+### Per-branch differences
+
+Only a few hyper-parameters differ between the two branches, because the two backbones have very different sensitivities.
+
+| Parameter | ResNet-50 branch | ViT-B/16 branch | Why |
+|-----------|------------------|-----------------|-----|
+| Input size | 336 × 336 | 384 × 384 | ViT-B/16 SWAG was pre-trained at 384. |
+| Batch size (H100) | 96 | 96 | Both fit at BF16 with `torch.compile`. |
+| Backbone LR (P1/P2) | 5e-5 | 1e-6 | ViT attention is fragile — a too-high LR destroys SWAG features instantly. |
+| Heads LR (P1/P2) | 1e-4 | 3e-4 | Standard AdamW sweet spot. |
+| Phase-3 backbone LR | 1e-5 | (similar order, slightly lower) | Joint refinement needs much lower LRs than Phase 1. |
+| Pretrain weights | `IMAGENET1K_V2` | `IMAGENET1K_SWAG_E2E_V1` | SWAG was trained on 3.6 B Instagram images and then fine-tuned on ImageNet at 384. |
+| Checkpoint name | `best_model.pth` | `best_hcbm_vit_384.pth` | So both branches can coexist on Drive without overwriting each other. |
+| Data pickle | `data_pipeline_resnet.pkl` | `data_pipeline_vit.pkl` | The two pickles only differ in `IMG_SIZE`; the splits are byte-identical. |
+
+---
+
+## Why two backbones — what we wanted to find out
+
+A CBM is only as good as its concepts. So we asked:
+
+> Does the choice of backbone change the **interpretability** of an H-CBM, not just its accuracy?
+
+A pure-CNN backbone (ResNet-50) compresses the image to a single pooled vector before the concept heads see it. That is a strong spatial bottleneck and may hurt fine-grained attributes like *bill shape* or *wing colour*.
+
+A Vision Transformer (ViT-B/16) keeps a 196-patch token sequence and aggregates it through self-attention into the `[CLS]` token. Two consequences for XAI:
+
+1. **Better concept features.** Self-attention can pool from any patch at any layer, so subtle attributes can survive into the final feature.
+2. **Faithful spatial attribution for free.** The `[CLS]` token attention weights over the 196 patches are the model’s own internal evidence — not a post-hoc approximation like Grad-CAM. This shows up as an extra panel in the ViT explanation notebook (the 14×14 attention heatmap), which the ResNet branch simply cannot produce without a surrogate method.
+
+Whether ViT actually wins on concept AUC, oracle gap, TTI curves, calibration and classifier-weight sparsity is exactly what notebook 04 measures.
+
+---
+
+## What each notebook actually shows
+
+### `02_H-CBM ResNet-50_explainability.ipynb` and `03_H-CBM ViT-B16_explainability.ipynb`
+
+Both notebooks follow the same recipe (same sections, same plots, same metrics) so the two are directly comparable:
+
+- **Section 1 — One-image walkthrough.** For a single image: show the input, the 13 part probabilities, the top-8 active fine attributes, and the predicted species. The ViT version also shows the CLS-token attention heatmap.
+- **Section 2 — Gallery.** Same walkthrough but for several images side-by-side.
+- **Section 3 — Eval cache.** One forward pass over the full eval split; from this point on everything is fast.
+- **Section 4 — Concept fidelity.** Per-attribute ROC-AUC distribution over the 312 attributes.
+- **Section 5 — Oracle accuracy (class-prototype).** The classifier head was trained on the model's *continuous predicted* `p_f`, not on binary `{0,1}` GT. Feeding raw GT attributes as a fake oracle is therefore out-of-distribution and produces near-chance accuracy (~10%). The honest ceiling is the **class-prototype oracle**: replace each image's `p_f` with the in-class average `proto[k] = mean p_f over images of class k`, then run the frozen classifier. This stays exactly on the training distribution and gives a faithful upper bound. The naive GT-0/1 oracle is also reported for context.
+- **Section 6 — TTI (Test-Time Intervention).** Mix predicted `p_f` with the **class-prototype** `p_f` along a fraction `r ∈ {0, 0.1, 0.25, 0.5, 0.75, 1}` (3 random seeds per fraction, random columns). By construction `r=0` recovers actual accuracy and `r=1` recovers the prototype-oracle accuracy; a monotonically rising curve is the genuine causal-control evidence.
+- **Section 7 — Per-part causal necessity.** For each of the 13 body parts, **zero the child `p_f` columns** directly and re-measure accuracy. Zeroing `p_c[part]` instead would only halve those children through the soft mask `0.5 + 0.5·p_c[parent]`; zeroing the columns themselves removes that branch from `W·p_f` entirely and gives the honest counterfactual *"what would the model do if it could not see this body part at all?"*.
+- **Section 8 — Classifier weight structure.** Inspect `W ∈ ℝ^{200×312}`: which attributes define which species, how sparse the definitions are (L1/L2 ratio + top-k mass curve), how concentrated they are on a few body parts (Herfindahl over parts).
+- **Section 9 — Calibration.** 15-bin reliability diagram for the 312 attribute probabilities + ECE.
+
+### `04_H-CBM Comparison ResNet-50 vs ViT-B16.ipynb`
+
+Loads both checkpoints into the **same Python process**, runs the exact same evaluation on both (one shared cache so every comparison is paired image-by-image), and reports head-to-head differences:
+
+| § | Comparison | Question it answers |
+|---|------------|--------------------|
+| 1 | Paired eval cache | Single forward pass per backbone over the **same** eval split → `pc, pf, zf, logit, pred, lbl, l2, W, b` per model. Headline `top-1` is printed as a sanity check. |
+| 2 | Headline metrics | Top-1, mean per-class accuracy, NLL, mean attribute-AUC, attribute Brier, attribute ECE — one row per backbone. |
+| 3 | Concept fidelity | Per-attribute AUC histograms + paired scatter (one dot per attribute) + top-10 attributes where each backbone wins. |
+| 4 | Oracle accuracy | **Class-prototype oracle** (matches §5 of 02/03): Actual vs Oracle vs Gap, with the naive GT-0/1 number reported alongside as a calibration-of-method check. |
+| 5 | TTI curves overlaid | Class-prototype intervention sweep `r ∈ {0, 0.1, 0.25, 0.5, 0.75, 1}` × 3 seeds — does each model's accuracy rise smoothly toward its own oracle line? |
+| 6 | Per-part causal necessity | 13 parts × 2 bars — for each body part, zero the **child `p_f` columns** of both models and compare the accuracy drop. Reveals whether the two backbones rely on the same parts. |
+| 7 | Calibration | Reliability diagrams side-by-side. |
+| 8 | Classifier weight structure | Sparsity (L1/L2), top-k mass curve, part-Herfindahl — whose species definitions are more concise? |
+| 9 | Agreement matrix | both right / only-ResNet / only-ViT / both wrong + Cohen's κ + oracle-selection and confidence-tie-break ensemble ceilings + per-class breakdown of "only-X correct". |
+| 10 | Verdict table | One row per backbone, every metric in one place, plus an "axes won" score. |
 
 ---
 
 ## Dataset
 
-**CUB-200-2011** — 11,788 images of 200 North American bird species.
+CUB-200-2011 (11,788 images, 200 species).
 
 | Split | Size |
 |-------|------|
 | Train | ~5,394 |
-| Val   | ~600 (10% stratified from train, `random_state=42`) |
+| Val   | ~600 (10 % stratified hold-out from train, `random_state=42`) |
 | Test  | 5,794 |
 
-**Two annotation levels:**
+- **L1 (13 coarse parts):** `back, belly, bill, breast, crown, eye, forehead, leg, nape, tail, throat, underparts, wing` — built automatically by parsing the prefix of `attributes.txt` (no extra labelling needed).
+- **L2 (312 fine attributes):** the standard CUB attributes, kept only when `certainty ≥ 3`.
 
-- **L1 (13 coarse parts):** `back, belly, bill, breast, crown, eye, forehead, leg, nape, tail, throat, underparts, wing`
-- **L2 (312 fine attributes):** binary attributes filtered by `certainty >= 3`
+Expected layout on Google Drive:
 
-### Dataset Directory Layout
-
-**Google Colab / Drive:**
 ```
-MyDrive/xai_dataset/
-+-- CUB_200_2011/
-|   +-- CUB_200_2011/      <- images + annotation txt files (double-nested)
-|   +-- attributes.txt     <- 312 attribute names (between the two CUB dirs)
-+-- segmentations/          <- XAI faithfulness evaluation only, NOT used in training
-```
-
-**Local (VS Code):**
-```
-DB/DB1/
-+-- CUB_200_2011/
-|   +-- CUB_200_2011/
-|   +-- attributes.txt
-+-- DB1-Mask/segmentations/
+MyDrive/XAI-Project/DB/DB1/
+├── CUB_200_2011/         ← images + the official txt files
+├── attributes.txt
+├── checkpoints/          ← best_model.pth, best_hcbm_vit_384.pth, …
+└── pipeline/             ← data_pipeline_resnet.pkl, data_pipeline_vit.pkl, train history
 ```
 
 Downloads:
 - [CUB-200-2011 (1.2 GB)](https://data.caltech.edu/records/65de6-vp158)
-- [Segmentation masks (39 MB)](https://data.caltech.edu/records/w9d68-gec53)
+- [Segmentation masks (39 MB)](https://data.caltech.edu/records/w9d68-gec53) (optional, only used for nicer plots)
 
 ---
 
-## Project Structure
-
-```
-hierarchical-cbm-cub/
-+-- 01_data.ipynb              <- Step 1: data pipeline
-+-- 02_model.ipynb             <- Step 2: model definition & verification
-+-- 03_train.ipynb             <- Step 3: training loop
-+-- 04_evaluate.ipynb          <- Step 4: evaluation & XAI analysis
-+-- README.md                  <- this file (pipeline + literature review)
-+-- .gitignore
-```
-
-Dataset lives on Google Drive or locally — not tracked by git.
-
----
-
-## Environment Setup
+## Environment
 
 ```bash
-# Clone
 git clone https://github.com/erythm/hierarchical-cbm-cub.git
 cd hierarchical-cbm-cub
 
-# Local virtual environment (Python 3.11)
 python -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # Linux / macOS
+.venv\Scripts\activate              # Windows
+# source .venv/bin/activate         # Linux / macOS
 
 pip install torch torchvision pillow matplotlib numpy scikit-learn pandas
 ```
 
-All notebooks auto-detect the runtime environment:
-
-```python
-IN_COLAB = 'google.colab' in sys.modules
-```
-
-- **In Colab** -> mounts Drive, uses `/content/drive/MyDrive/xai_dataset/...`
-- **Local (VS Code + Jupyter)** -> uses `DB/DB1/CUB_200_2011/...` relative to the project root
+The training notebooks are written for **Google Colab with an A100 / H100** (BF16 AMP, `torch.compile`, large batch). The explainability and comparison notebooks are light and run on any GPU (or even CPU, slowly). The Colab-only cells (`drive.mount`) are at the top of each notebook and easy to skip when running locally.
 
 ---
 
-## Literature Review
-
-Covers Deliverable 1 (Literature Review) and Deliverable 2 (Research Gaps).
+# Literature Review (Deliverable 1)
 
 | Group | Papers |
 |-------|--------|
-| **G1 — CBM Foundations** | Koh et al. ICML 2020 [1], Hase et al. AAAI 2019 [6] |
+| **G1 — CBM foundations**   | Koh et al. ICML 2020 [1], Hase et al. AAAI 2019 [6] |
 | **G2 — Hierarchical CBMs** | Pittino et al. EAAI 2023 [2], Sun et al. (under review) [3] |
-| **G3 — XAI Context** | Poeta et al. ACM CSUR 2025 [4] |
-| **G4 — Supporting Methods** | Lin et al. ICCV 2017 [7], Kendall et al. CVPR 2018 [8], Bertinetto et al. CVPR 2020 [5] |
+| **G3 — XAI context**       | Poeta et al. ACM CSUR 2025 [4] |
+| **G4 — Supporting methods**| Lin et al. ICCV 2017 [7], Kendall et al. CVPR 2018 [8], Bertinetto et al. CVPR 2020 [5] |
 
----
+### [1] Koh et al. — *Concept Bottleneck Models* (ICML 2020)
 
-### GROUP 1 — CBM Foundations
+The original CBM idea: the model first predicts $\hat{c} = g(x)$ (a vector of human-named concepts), then $\hat{y} = h(\hat{c})$, with the strict rule that $h$ sees **only** $\hat{c}$. Three training modes are introduced: independent, sequential, joint — each with a different trade-off between concept quality and task accuracy. The paper also introduces *concept intervention* (replace a predicted concept with its true value, watch accuracy go up) — the standard CBM diagnostic. **Limit:** all concepts are treated as a flat unstructured list. There is no notion that `bill_shape::dagger` and `bill_color::black` both belong to *bill*.
 
-#### [1] Koh et al. — *Concept Bottleneck Models* (ICML 2020)
+### [6] Hase et al. — *Interpretable Image Recognition with Hierarchical Prototypes* (AAAI 2019)
 
-##### Core Contribution
+Prototype-based recognition where the prototypes are organised in a class taxonomy (animal → bird → warbler). Different from H-CBM (the hierarchy is over **classes**, not over attributes), but it shows that putting hierarchy *inside* the architecture — instead of bolting it on afterwards — gives more consistent explanations.
 
-Koh et al. introduced the **Concept Bottleneck Model (CBM)**: a two-stage neural network that maps an input image $x$ first to a set of human-interpretable concept scores $\hat{c} \in [0,1]^k$, then from those concept scores to the final label $\hat{y}$. The key property is the **bottleneck constraint**: the task predictor $h$ receives *only* $\hat{c}$ as input, never the raw image features.
+### [2] Pittino et al. — *Hierarchical CBM for Vision* (EAAI 2023)
 
-$$\hat{c} = g(x) \qquad \hat{y} = h(\hat{c})$$
+The closest prior work. They use a high-level concept predictor that conditions a low-level one, then a final classifier. Same shape as our pipeline. **Difference:** their hierarchy constraint is a **soft penalty** during training (a regulariser that says “please keep `p_low ≤ p_high[parent]`”). At inference time, nothing prevents a violation. We instead use a **hard multiplicative mask** — so violations are mathematically impossible.
 
-This guarantees that every prediction can be explained by tracing which concepts $g$ activated and how $h$ weighted them.
+### [3] Sun et al. — *Supervised Hierarchical CBM* (under review)
 
-##### Three Training Modes
+Trains the concept predictors first, then the classifier — a **sequential training schedule**. This avoids the well-known leakage problem of joint CBM training (where the classifier learns to exploit fine-grained noise in the predicted concepts and ignore their semantic meaning). Our 3-phase training schedule follows this idea.
 
-| Mode | How it trains | Trade-off |
-|------|--------------|----------|
-| **Independent** | $g$ trained on concepts first; $h$ trained on predicted $\hat{c}$ | Best concept accuracy; task accuracy may suffer |
-| **Sequential** | Same as Independent but $h$ is trained on real GT concepts | Cleaner bottleneck; slightly lower task accuracy |
-| **Joint** | Both $g$ and $h$ share a joint loss $L_c + L_y$ | Best task accuracy; concepts can encode shortcut information (leakage) |
+### [4] Poeta et al. — *Concept-based XAI: A Survey* (ACM CSUR 2025)
 
-For this project, training is **sequential with joint fine-tuning** (Phases 1a/1b → 2 → 3) to balance concept quality and task performance without allowing leakage.
+A taxonomy paper for concept-based XAI: post-hoc vs by-design, user-defined vs data-driven concepts, global vs local, faithful vs unfaithful, complete vs incomplete. Crucially, the survey lists four open problems for CBMs: (i) annotation cost, (ii) concept leakage, (iii) flat concept sets, (iv) no hierarchy-aware evaluation. We attack (iii) and (iv) directly.
 
-##### Concept Intervention
-
-CBM's most cited contribution beyond architecture: at test time, replace a predicted concept $\hat{c}_i$ with its ground-truth value $c_i^*$ and measure accuracy gain. If accuracy improves significantly, the concepts are causally meaningful.
-
-$$\text{Acc}(\text{intervention rate}) = \text{Acc}\left(h(c^*_{1..r} \cup \hat{c}_{r+1..k})\right)$$
-
-Plotting accuracy vs. intervention rate from 0% to 100% is the standard CBM evaluation, implemented in `04_evaluate.ipynb`.
-
-##### Key Limitation (motivates this project)
-
-Koh et al. treat all concepts as a **flat, unstructured set**. There is no notion that `has_bill_shape::dagger` and `has_bill_color::black` both belong to the *bill* group, or that predicting `bill_color` is only meaningful if a bill is visible. This structural ignorance is the primary gap that H-CBM addresses.
-
----
-
-#### [6] Hase et al. — *Interpretable Image Recognition with Hierarchical Prototypes* (AAAI 2019)
-
-##### Core Contribution
-
-Hase et al. propose **HPrototypes**: a prototype-based network where prototypes are organised in a hierarchy that mirrors a visual class taxonomy. Each prototype corresponds to a region of the feature space at a specific granularity level (e.g., *animal* → *bird* → *warbler*). This gives users coarse-to-fine explanations.
-
-##### Architecture
-
-- A shared backbone extracts features $z$.
-- Prototypes at each tree level are trained to minimise distance to their assigned samples.
-- A hierarchical classification head reads from prototypes at the finest level, constrained so that higher-level class scores are consistent with lower-level ones.
-
-##### Relevance to H-CBM
-
-| Aspect | HPrototypes | H-CBM |
-|--------|------------|-------|
-| Hierarchy levels | Class taxonomy (animal → bird → species) | Attribute hierarchy (part → attribute) |
-| Explanation unit | Prototype patch | Concept probability |
-| Human-alignment | Visual similarity | Named semantic attributes |
-| Intervention | Not supported | Concept intervention (Koh et al.) |
-
-HPrototypes demonstrates that **hierarchical structure in the model architecture** — not just post-hoc annotation — leads to more interpretable and semantically consistent decisions. H-CBM applies the same principle at the attribute level.
-
----
-
-### GROUP 2 — Hierarchical CBMs (Closest Prior Work)
-
-#### [2] Pittino et al. — *Hierarchical Concept Bottleneck Models for Vision* (EAAI 2023)
-
-##### Core Contribution
-
-Pittino et al. extend CBMs to a **two-level concept hierarchy** for fine-grained visual classification. They define:
-
-- **High-level concepts** (analogous to L1 in this project): broad semantic categories such as body parts.
-- **Low-level concepts** (analogous to L2): fine-grained visual attributes within each high-level concept.
-
-The high-level concept predictor provides context that guides the low-level predictor, and the final classifier reads from low-level concepts.
-
-##### Architecture
-
-$$F \xrightarrow{g_H} z_H \xrightarrow{\sigma} p_H \qquad \text{(high-level)}$$
-$$[F, p_H] \xrightarrow{g_L} z_L \xrightarrow{\sigma} p_L \qquad \text{(low-level, conditioned on } p_H\text{)}$$
-$$p_L \xrightarrow{h} \hat{y} \qquad \text{(task classifier)}$$
-
-This is structurally identical to H-CBM's design. The critical difference is in **enforcement of hierarchy consistency**:
-
-##### Key Difference from H-CBM
-
-Pittino et al. use a **soft penalty** (consistency regularisation loss) to encourage $p_L[i] \leq p_H[\text{parent}(i)]$, but do not enforce it architecturally. H-CBM uses a **hard multiplicative mask**:
-
-$$p_f[i] = \sigma(z_f[i]) \times p_c[\text{parent}(i)]$$
-
-This is an **architectural guarantee**: hierarchy violations are impossible at inference time, not just discouraged during training. The distinction is important for trustworthiness — a user can be certain that if the model says *the bill is absent*, all bill-colour predictions will be exactly 0.
-
-##### Results
-
-Pittino et al. report improved concept accuracy over flat CBMs on CUB-200-2011, validating the two-level design. This work is the direct baseline in this project's evaluation.
-
----
-
-#### [3] Sun et al. — *Supervised Hierarchical Concept Bottleneck Models* (Under Review)
-
-##### Core Contribution
-
-Sun et al. propose a CBM architecture with explicit **multi-level supervision** at each node of a concept hierarchy. Instead of deriving L1 labels by OR-aggregation (as done in this project), they train with direct annotations at every level of the hierarchy, allowing gradients to flow from both levels independently.
-
-They also introduce a **sequential training strategy**: first stabilise the concept predictors, then train the task classifier. This prevents the classic CBM failure mode where the classifier learns to exploit imperfect concept predictions rather than their semantic content.
-
-##### Sequential Training Protocol (adopted in this project)
-
-| Phase | What is trained | Loss terms |
-|-------|----------------|------------|
-| 1a (backbone frozen) | Coarse head only | $L_{\text{coarse}}$ |
-| 1b (backbone frozen) | Coarse + Fine heads | $L_{\text{coarse}} + L_{\text{fine}} + L_{\text{consistency}}$ |
-| 2 (backbone unfrozen, $L_{\text{task}}$ warm-up) | All | $L_{\text{coarse}} + L_{\text{fine}} + L_{\text{task}} + L_{\text{consistency}}$ |
-| 3 (full fine-tuning) | All | Same as Phase 2 |
-
-This schedule (directly used in `04_train.ipynb`) ensures the concepts are meaningful before the classifier is allowed to use them, preventing the leakage problem that joint training can cause.
-
-##### Key Limitation of Sun et al. (addressed here)
-
-Sun et al. still rely on soft consistency penalties. The hard masking constraint and OR-aggregated L1 labels derived purely from attribute names are contributions of this project.
-
----
-
-### GROUP 3 — XAI Context
-
-#### [4] Poeta et al. — *Concept-based Explanations in Computer Vision: Where Are We and Where Could We Go?* (ACM CSUR 2025)
-
-##### Core Contribution
-
-Poeta et al. provide a comprehensive survey of concept-based XAI methods in computer vision, establishing a **taxonomy** that classifies methods along several axes:
-
-| Axis | Categories |
-|------|------------|
-| **Explanation timing** | Post-hoc vs by-design |
-| **Concept type** | User-defined, data-driven, prototype-based |
-| **Granularity** | Global vs local explanations |
-| **Faithfulness** | Does the explanation reflect the actual decision process? |
-| **Completeness** | Do concepts fully determine the output? |
-
-##### Position of CBMs in this Taxonomy
-
-CBMs are **by-design**, using **user-defined** concepts with **global** explanations (the concept vector $\hat{c}$ is the same for every input, unlike LIME which produces local approximations). CBMs achieve **structural completeness** by construction (the task predictor sees only $\hat{c}$).
-
-##### Critique of CBMs (from survey)
-
-The survey highlights several open problems:
-
-1. **Scalability of annotations:** CBMs require per-image concept labels, which are expensive to obtain at scale.
-2. **Concept leakage:** Joint training modes allow the classifier to encode non-concept information in high-precision concept activations.
-3. **Flat concept sets:** Existing methods rarely capture structural relations between concepts (e.g., part-attribute hierarchies).
-4. **Evaluation gaps:** Most CBM papers evaluate task accuracy and concept accuracy separately; few measure whether the *hierarchy* of explanations is coherent.
-
-H-CBM directly addresses gaps 3 and 4.
-
-> **Note:** One of the survey's authors is the course professor; this work defines the expected framing for the literature review.
-
----
-
-### GROUP 4 — Supporting Technical Methods
-
-#### [7] Lin et al. — *Focal Loss for Dense Object Detection* (ICCV 2017)
-
-##### Core Contribution
-
-Lin et al. propose **Focal Loss** to address extreme class imbalance in one-stage object detectors. Standard cross-entropy assigns equal weight to easy and hard examples; Focal Loss adds a modulating factor $(1 - p_t)^\gamma$ that down-weights well-classified examples:
+### [7] Lin et al. — *Focal Loss for Dense Object Detection* (ICCV 2017)
 
 $$\text{FL}(p_t) = -\alpha_t (1 - p_t)^\gamma \log(p_t)$$
 
-where:
-- $p_t$ is the model's estimated probability for the ground-truth class
-- $\gamma \geq 0$ is the *focusing parameter* (default $\gamma=2$)
-- $\alpha_t$ balances positive vs. negative classes (default $\alpha=0.25$)
+Down-weights easy examples so the model is forced to focus on hard ones. We use Focal Loss (α=0.25, γ=2) for the L_fine head because most CUB attributes are positive for under 5 % of images and plain BCE just learns to predict zero everywhere.
 
-##### Application to L2 Concept Loss
+### [8] Kendall et al. — *Multi-Task Learning Using Uncertainty to Weigh Losses* (CVPR 2018)
 
-CUB-200-2011 attribute labels are highly imbalanced: most birds do not exhibit most attributes (e.g., `has_wing_color::pink` is positive for <2% of images). Using standard BCE for the fine head loss would cause the model to predict all-zeros and still achieve high accuracy.
+A principled way to weight several losses without manual grid search:
 
-In `03_train.ipynb`, Focal Loss with $\alpha=0.25, \gamma=2$ is used for $L_{\text{fine}}$, masked by per-image certainty $\geq 3$.
+$$L = \sum_i \frac{1}{2 \sigma_i^2} L_i + \log \sigma_i$$
 
-| Loss | $\gamma=0$ | $\gamma=0.5$ | $\gamma=1$ | $\gamma=2$ (default) |
-|------|-----------|-------------|-----------|----------------------|
-| Weight on easy examples | 1.0 | ↓ | ↓ | very low |
-| Weight on hard examples | 1.0 | same | same | same |
+Cited here as the theoretical justification for the multi-loss form $L = \lambda_c L_c + \lambda_f L_f + \lambda_t L_t$. We currently use fixed $\lambda$ values; learning them is an obvious extension.
+
+### [5] Bertinetto et al. — *Making Better Mistakes* (CVPR 2020)
+
+Standard top-1 treats every wrong answer as equally bad. Bertinetto et al. score mistakes by **lowest common ancestor depth** in a class hierarchy: confusing two warblers is a mild mistake; confusing a warbler with a gull is severe. We use this idea as a *family-level* sanity check on CUB (mild = same family, severe = different family).
 
 ---
 
-#### [8] Kendall et al. — *Multi-Task Learning Using Uncertainty to Weigh Losses in Deep Learning* (CVPR 2018)
+# Research Gaps (Deliverable 2)
 
-##### Core Contribution
+| Gap | Problem | Prior best | Our solution | Type of guarantee |
+|-----|---------|------------|--------------|-------------------|
+| **G1** | Flat concept sets ignore hierarchies | Soft conditioning (Pittino [2]) | `attr_parent_idx` parsed from attribute names → 13 L1 groups, no extra labels | Architectural |
+| **G2** | No coarse-to-fine constraint baked into the architecture | Soft consistency penalty in the loss (Pittino [2]) | Multiplicative gate **inside the forward pass**: $p_f[i] = \sigma(z_f[i]) \cdot (0.5 + 0.5\,p_c[\text{parent}(i)])$ | Architectural — `p_f[i]` is parent-conditioned by construction at every forward, no loss term required |
+| **G3** | CBMs are not evaluated on hierarchy quality | Mistake severity for plain classifiers (Bertinetto [5]) | Concept AUC, oracle gap, TTI, per-part necessity, calibration, classifier-weight sparsity — same suite on **both** backbones in notebook 04 | Evaluation |
+| **G4** | Classifier leakage bypasses the bottleneck | Joint training with consistency loss | Strict bottleneck (`Linear(312 → 200)`, no shortcut) + sequential 3-phase schedule | Architectural |
 
-When training with multiple losses $\{L_i\}$, manually tuning the scalar weights $\{\lambda_i\}$ requires expensive grid search. Kendall et al. show that each task's weight should be inversely proportional to its **homoscedastic (task) uncertainty** $\sigma_i^2$:
+### G1 — flat → hierarchical (no extra labels)
 
-$$L = \sum_i \frac{1}{2\sigma_i^2} L_i + \log \sigma_i$$
-
-The $\log \sigma_i$ term regularises the uncertainty parameters, preventing $\sigma_i \to \infty$. The $\sigma_i$ values are learned jointly with the model weights via gradient descent.
-
-##### Application in This Project
-
-The H-CBM loss has three components:
-
-$$L_{\text{total}} = \lambda_c L_{\text{coarse}} + \lambda_f L_{\text{fine}} + \lambda_{\text{cls}} L_{\text{task}}$$
-
-Uncertainty weighting would replace the fixed $(\lambda_c=0.5,\; \lambda_f=0.5,\; \lambda_{\text{cls}}=1.0)$ with learnable parameters. `03_train.ipynb` uses fixed weights for simplicity; this paper is cited as the theoretical basis for the optional learnable-weighting extension.
-
----
-
-#### [5] Bertinetto et al. — *Making Better Mistakes: Leveraging Class Hierarchies with Deep Networks* (CVPR 2020)
-
-##### Core Contribution
-
-Standard top-1 accuracy treats every misclassification as equally bad. Bertinetto et al. formalise mistake severity with the **Lowest Common Ancestor (LCA) depth**:
-
-$$\text{LCA-depth}(y, \hat{y}) = \text{depth of LCA of } y \text{ and } \hat{y} \text{ in class hierarchy}$$
-
-A **low LCA depth** (shallow ancestor) means the prediction and label are far apart semantically (severe mistake). A **high LCA depth** means they share a specific ancestor (mild mistake).
-
-##### Application in This Project
-
-`04_evaluate.ipynb` approximates the LCA metric using **bird family names** extracted from CUB class names:
-
-- *Same family* → mild mistake (e.g., predicting *Sayornis_Phoebe* for *Eastern_Phoebe*)
-- *Different family* → severe mistake (e.g., predicting *Herring_Gull* for *Purple_Martin*)
-
-The hypothesis is that H-CBM, by organising predictions through body-part concepts, should make proportionally more **mild mistakes** than an unconstrained ResNet-50 baseline.
-
-| Metric | Expected direction |
-|--------|-------------------|
-| Mild Mistake % | H-CBM > B1 (ResNet) |
-| Mild Mistake % | H-CBM >= B2 (Flat CBM) |
-
----
-
-## Research Gaps (Deliverable 2)
-
-Based on the literature review above, four concrete gaps motivate the design of H-CBM.
-
-| Gap | Problem | Prior Best | H-CBM Solution | Guarantee |
-|-----|---------|-----------|----------------|-----------|
-| **G1** | Flat concept sets ignore semantic hierarchies | Soft conditioning on high-level scores (Pittino [2]) | `attr_parent_idx` from attribute name parsing; 13 L1 groups | Structural (architecture) |
-| **G2** | No hard coarse-to-fine constraint at inference | Soft consistency penalty during training (Pittino [2]) | `p_f[i] = σ(z_f[i]) × p_c[parent(i)]` — multiplicative mask | Mathematical (always holds) |
-| **G3** | CBM evaluation ignores semantic quality of mistakes | Semantic mistake severity for standard classifiers (Bertinetto [5]) | Evaluate mild/severe mistake rate alongside concept quality | Evaluation (novel combination) |
-| **G4** | Classifier leakage bypasses concept bottleneck | Joint training with consistency loss | Strict bottleneck + sequential training phases | Structural (no feature path to classifier) |
-
-### Gap 1: Flat Concept Sets Ignore Natural Semantic Hierarchies
-
-Koh et al. [1] treat the 312 CUB attributes as an unordered flat set — the model must independently learn the correlation between `bill_visible` and `has_bill_*` attributes. Pittino et al. [2] partially address this by conditioning the low-level predictor on high-level scores, but do not enforce any structural constraint between levels at inference time.
-
-**H-CBM solution:** The attribute hierarchy is built directly from CUB attribute names (`has_bill_shape::dagger` → `"bill"` → L1 index 1). This produces 13 body-part groups. The `attr_parent_idx` tensor (shape 312) encodes this as a lookup used in the Masked Fine Head at every forward pass. If a part is absent, its children are identically 0 — both semantically correct and computationally efficient.
-
-### Gap 2: Existing CBMs Lack a Hard Coarse-to-Fine Constraint
-
-Pittino et al. [2] add a consistency loss $L_{\text{consistency}} = \sum_i \max(0, p_f[i] - p_c[\text{parent}(i)])^2$ during training. However, at inference time nothing prevents a violation, the soft penalty creates a trade-off requiring careful tuning, and a user cannot be certain explanations are consistent without inspecting every prediction.
-
-**H-CBM solution:** The Masked Fine Head implements the constraint algebraically:
-
-$$p_f[i] = \underbrace{\sigma(z_f[i])}_{\in [0,1]} \times \underbrace{p_c[\text{parent}(i)]}_{\in [0,1]} \leq p_c[\text{parent}(i)]$$
-
-Since both factors are in $[0,1]$, the product is always $\leq$ the parent probability. This is a **mathematical guarantee** — no training regime, no example, no adversarial input can violate it.
-
-### Gap 3: Limited Hierarchy-Aware Evaluation in the CBM Literature
-
-Koh et al. [1] evaluate task accuracy and concept intervention curves only. Pittino et al. [2] add per-level concept accuracy but do not measure hierarchy consistency rates or semantic mistake severity. Bertinetto et al. [5] propose hierarchy-aware evaluation metrics but apply them to standard classifiers, not CBMs.
-
-**H-CBM solution:** `04_evaluate.ipynb` introduces a comprehensive evaluation suite:
-
-| Metric | What it measures | Novel? |
-|--------|-----------------|--------|
-| Top-1 / Top-5 Accuracy | Standard task performance | — |
-| L1 Concept Accuracy (13 parts) | Coarse concept quality | — |
-| L2 Concept macro-F1 + AUROC | Fine concept quality (imbalance-aware) | Partial |
-| Concept Intervention curve | Causal meaningfulness of concepts | — |
-| Semantic Mistake Severity | Hierarchy-aware error quality (applied to CBM) | **Novel** |
-| Hierarchy Consistency Rate | Fraction of samples with no violations | **Novel** |
-| Multi-level explanation visualisation | L1 vs L2 comparison per image | **Novel** |
-
-### Gap 4: Classifier Leakage Undermines Interpretability
-
-Poeta et al. [4] identify this as one of the most critical open problems in concept-based XAI. In joint training, the classifier $h$ may learn to exploit subtle non-semantic signals encoded in $\hat{c}$ — creating an **interpretability illusion** where the model appears to explain itself via concepts but the actual decision mechanism is opaque.
-
-**H-CBM solution:** Two structural choices prevent leakage:
-
-1. **Strict bottleneck:** `HierarchicalCBM.classifier` is a `nn.Linear(312, 200)` that takes *only* `p_f` as input. The 2048-dim feature map is never passed to the classifier.
-2. **Sequential training** (from Sun et al. [3]): the classifier is only introduced in Phase 2 after the concept heads have been trained in isolation for 30 epochs, ensuring concept activations carry genuine semantic meaning before the classifier can use them.
-
----
-
-### Conclusion
-
-| Paper | What it establishes | Gap it leaves |
-|-------|--------------------|--------------|
-| Koh et al. [1] | CBM architecture; concept intervention | Flat concepts; leakage in joint mode |
-| Hase et al. [6] | Hierarchical architecture improves consistency | Prototype-based, not attribute-based; no intervention |
-| Pittino et al. [2] | Two-level CBM for vision | Soft constraint only; no formal guarantee |
-| Sun et al. [3] | Sequential training prevents leakage | Still soft consistency; no hard mask |
-| Poeta et al. [4] | Identifies flat concepts and leakage as open problems | Survey only — no solution proposed |
-| Lin et al. [7] | Focal Loss for attribute imbalance | Not applied in CBM context before |
-| Kendall et al. [8] | Principled multi-task loss weighting | Not applied in CBM context before |
-| Bertinetto et al. [5] | Hierarchy-aware error metrics | Applied only to standard classifiers |
-
-H-CBM's contributions relative to the state-of-the-art:
-
-1. **Hard multiplicative masking** — the first CBM with a provable $p_f \leq p_c$ constraint.
-2. **Zero-annotation L1 hierarchy** — L1 labels derived purely from attribute name parsing, requiring no additional manual labelling.
-3. **Unified hierarchical evaluation** — combining concept quality, concept intervention, and semantic mistake severity in a single protocol.
-
----
-
-## Pipeline: Step by Step
-
-### Step 1 — Data Pipeline (`01_data.ipynb`)
-
-**Goal:** Load all CUB annotation files, construct L1/L2 concept labels, build PyTorch `Dataset` and `DataLoader` objects, and save a `data_pipeline.pkl` for downstream notebooks.
-
-#### L1 Label Construction
-
-1. Parse `attributes.txt` -> extract the category before `::` (e.g., `has_bill_shape::dagger` -> `bill`)
-2. Strip `has_` prefix and property suffixes (`_color`, `_pattern`, `_shape`, `_length`)
-3. Merge compound parts: `under_tail` / `upper_tail` -> `tail`; `upperparts` -> `back`; `underparts` -> `belly`
-4. Attributes without a clear body part (`primary_color`, `size`, `shape`) have no L1 parent -> always unmasked
-5. Build `part_to_attr_indices` dict mapping each of the 13 parts to its L2 attribute indices
-6. `L1[part] = max(L2[attr] for attr in part_to_attr_indices[part])` — OR aggregation
-
-#### L2 Label Construction
-
-- Source: `image_attribute_labels.txt`
-- Filter: keep only annotations with `certainty >= 3`
-
-#### Visibility Masking
-
-- Source: `part_locs.txt` — the `visible` flag per part per image
-- Used to mask the loss on invisible parts (not input features — only affects loss computation)
-
-#### Image Preprocessing
+We never asked an annotator for the 13 part labels. Instead we parsed the prefix of every CUB attribute name:
 
 ```
-Train:    Resize(256) -> RandomCrop(224) -> RandomHorizontalFlip
-          -> ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2)
-          -> Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-
-Val/Test: Resize(256) -> CenterCrop(224) -> Normalize
+has_bill_shape::dagger      → bill
+has_wing_color::brown       → wing
+has_size                    → NO_PARENT (mask = 1)
 ```
 
-#### Dataset Output
+Then we OR-aggregate: a part is “present” for an image if at least one of its attributes is present in the GT. Result: 13 binary L1 labels per image, **for free**.
 
-`BirdDataset.__getitem__` returns a 6-tuple:
+### G2 — loss-side soft penalty → architectural multiplicative gate
 
-```python
-(img, label, l1, l2, cert, vis)
-# img   : (3, 224, 224) float tensor
-# label : int  - 0-indexed species (CUB is 1-indexed, subtract 1)
-# l1    : (13,) float - coarse binary labels
-# l2    : (312,) float - fine binary labels (certainty-filtered)
-# cert  : (312,) float - certainty mask (1 = certain enough, 0 = skip in loss)
-# vis   : (13,) float - visibility mask (1 = part visible in image)
-```
+In Pittino et al. the coarse-to-fine consistency lives only in the loss: at inference nothing prevents a child being more confident than its parent. We move the constraint **inside the forward pass** as `p_f[i] = σ(z_f[i]) · (0.5 + 0.5·p_c[parent(i)])`. The gate is in `[0.5, 1]` (not `[0, 1]`) on purpose — a hard `× p_c[parent]` collapses children to zero whenever `p_c ≈ 0.5` early in training and the fine head never recovers. The soft form keeps gradients alive while still enforcing a *parent-conditioned ceiling*: when `p_c[parent] → 0` every child is capped at `0.5·σ(z_f)`, and the same gate is used identically at training and inference, so the classifier never sees an out-of-distribution `p_f`.
 
-**Saved output:** `data_pipeline.pkl` with keys: `NUM_L1, NUM_L2, CONCEPT_NAMES, attr_parent_idx`
+### G3 — broader evaluation, on both backbones
+
+Each branch’s explainability notebook reports concept AUC, oracle, TTI, per-part necessity, calibration and weight structure. Notebook 04 then runs the **same** evaluation on both models in the same memory and reports paired differences — including the agreement matrix and the “oracle ensemble” ceiling, which reveal *complementarity* between the two backbones.
+
+### G4 — strict bottleneck + sequential phases
+
+The classifier is `Linear(312 → 200)` with **no** side-channel from the backbone. Training is sequential (Phase 1 — heads first; Phase 2 — calibrate the classifier on **predicted** concepts; Phase 3 — joint fine-tune with concept-dominant loss weights). This combination removes both leakage paths: structural (no shortcut features) and temporal (concepts are stable before the classifier is allowed to use them).
 
 ---
 
-### Step 2 — Model Definition (`02_model.ipynb`)
+## Checkpoints written to disk
 
-**Goal:** Define `HierarchicalCBM`, verify the forward pass produces zero hierarchy violations, and save `model_config.pkl`.
-
-#### `HierarchicalCBM` forward pass
-
-```python
-def forward(self, x):
-    F       = self.backbone(x)                      # (B, 2048)
-    z_c     = self.coarse_head(F)                   # (B, 13)
-    p_c     = torch.sigmoid(z_c)                    # (B, 13)
-
-    F_cat   = torch.cat([F, p_c], dim=1)            # (B, 2061)
-    z_f     = self.fine_head(F_cat)                 # (B, 312)
-    p_f_raw = torch.sigmoid(z_f)                    # (B, 312)
-
-    # Masked Fine Head - hard hierarchical constraint
-    parent_probs = p_c[:, self.attr_parent_idx]     # (B, 312); -1 index -> 1.0 (unmasked)
-    p_f          = p_f_raw * parent_probs           # (B, 312)
-
-    cls_logits = self.classifier(p_f)               # (B, 200)
-    return cls_logits, z_c, p_c, z_f, p_f
-```
-
-- `attr_parent_idx` is a `(312,)` buffer; value `-1` means no parent (attribute is always unmasked)
-- Returns **5 values** — raw logits `z_c`, `z_f` are exposed for numerically stable loss computation
-
-**Saved output:** `model_config.pkl`
-
----
-
-### Step 3 — Training (`03_train.ipynb`)
-
-**Goal:** Train H-CBM end-to-end, checkpoint the best model, and save training curves.
-
-#### Loss Function
-
-$$L_{\text{total}} = \lambda_c L_{\text{coarse}} + \lambda_f L_{\text{fine}} + \lambda_{\text{cls}} L_{\text{task}}$$
-
-| Term | Formula | Notes |
-|------|---------|-------|
-| $L_{\text{coarse}}$ | `WeightedBCE(z_c, y_l1)` | `pos_weight = N_neg/N_pos` per part; masked by visibility |
-| $L_{\text{fine}}$ | `FocalLoss(z_f, y_l2, alpha=0.25, gamma=2)` | masked by `cert` and visible parts |
-| $L_{\text{task}}$ | `CrossEntropy(cls_logits, y_class)` | standard 200-class classification |
-
-Fixed weights: $\lambda_c = 0.5$, $\lambda_f = 0.5$, $\lambda_{\text{cls}} = 1.0$
-
-#### Optimizer & Schedule
-
-```
-AdamW, weight_decay = 1e-4
-  Backbone (ResNet-50):    lr = 1e-4   <- lower to prevent catastrophic forgetting
-  Heads + Classifier:      lr = 1e-3
-
-Epochs:         50
-Batch size:     32
-Early stopping: patience = 10 on val_loss
-LR schedule:    ReduceLROnPlateau (patience=5, factor=0.5)
-```
-
-**Saved outputs:**
-- `best_model.pth` — checkpoint with `epoch, model_state_dict, optimizer_state_dict, val_loss, val_acc, NUM_L1, NUM_L2, CONCEPT_NAMES, attr_parent_idx`
-- `train_history.pkl` — per-epoch loss and accuracy history
-- `training_curves.png` — loss and accuracy plots
-
----
-
-### Step 4 — Evaluation (`04_evaluate.ipynb`)
-
-**Goal:** Measure predictive performance, concept quality, semantic mistake severity, and produce multi-level explanations. Also trains two baselines for comparison.
-
-#### Standard Metrics
-
-| Metric | Details |
-|--------|---------|
-| Top-1 Accuracy | 200-class species classification |
-| Top-5 Accuracy | Species in top-5 predictions |
-| L1 Concept Accuracy | Binary accuracy per part (threshold 0.5), macro-averaged |
-| L2 Concept macro-F1 | Threshold 0.5; F1 preferred over accuracy due to class imbalance |
-| L2 macro-AUROC | Per-attribute AUROC averaged over attrs with both classes present |
-
-#### Hierarchy-Aware Metrics
-
-| Metric | Description |
-|--------|-------------|
-| **Concept Intervention** | Replace predicted L2 values with ground-truth for fractions [0%, 25%, 50%, 75%, 100%] of L1 groups. Steep accuracy slope = concepts are causally meaningful. |
-| **Semantic Mistake Severity** | For each wrong prediction, check if the predicted species is in the same bird family (mild) or a different family (severe). Lower severe % = semantically better errors. |
-| **Hierarchy Consistency Rate** | Fraction of samples where `p_f[child] <= p_c[parent]` holds for all pairs. |
-
-#### Multi-Level Explanation
-
-`plot_multilevel_explanation()` produces a two-panel figure per sample:
-
-- **Left (L1):** Horizontal bars of all 13 coarse body-part probabilities. Green = active (p > 0.5), red = absent.
-- **Right (L2):** Horizontal bars of the top-10 most activated fine attributes with their names and probabilities.
-
-#### Baselines
-
-| ID | Model | Architecture | Concept levels |
-|----|-------|-------------|----------------|
-| B1 | ResNet-50 end-to-end | Standard classifier | None — accuracy upper bound |
-| B2 | Flat CBM (Koh et al. 2020) | Feature -> L2 -> species | L2 only, no hierarchy |
-| **Ours** | **H-CBM** | Masked Hierarchical CBM | L1 + L2, hard mask |
-
-Baselines are checkpoint-conditional: training is skipped if the checkpoint already exists.
-
-**Final output:** pandas comparison table — Top-1, Top-5, L1 Acc, L2 F1, L2 AUROC, Mild Mistake %, Acc@0%, Acc@100% intervention.
-
----
-
-## Implementation Status
-
-| Component | File | Status |
-|-----------|------|--------|
-| Data Pipeline | `01_data.ipynb` | Complete |
-| Model Architecture | `02_model.ipynb` | Complete |
-| Training Loop | `03_train.ipynb` | Complete |
-| Evaluation & XAI | `04_evaluate.ipynb` | Complete |
+| File | Written by | Contents |
+|------|------------|----------|
+| `data_pipeline_resnet.pkl` | `01_data.ipynb` | Splits + metadata for the ResNet branch (IMG_SIZE=336). |
+| `data_pipeline_vit.pkl`    | `01_data.ipynb` | Same splits, IMG_SIZE=384, for the ViT branch. |
+| `best_model.pth`           | `02 ... train`   | ResNet-50 H-CBM, best by `val_acc`. |
+| `train_history.pkl`        | `02 ... train`   | Per-epoch losses + accuracies. |
+| `best_hcbm_vit_384.pth`    | `03 ... train`   | ViT-B/16 H-CBM, best by `val_acc`. |
+| `train_history_vit_384.pkl`| `03 ... train`   | Same, for the ViT branch. |
 
 ---
 
 ## References
 
-| | Paper | Venue | Relevance |
-|-|-------|-------|-----------|
-| [1] | Koh, P.W. et al. — *Concept Bottleneck Models* | ICML 2020 | CBM foundation + Concept Intervention |
+| | Paper | Venue | Why we cite it |
+|-|-------|-------|----------------|
+| [1] | Koh, P.W. et al. — *Concept Bottleneck Models* | ICML 2020 | CBM foundation + concept intervention |
 | [2] | Pittino, F. et al. — *Hierarchical CBM for Vision* | EAAI 2023 | Closest prior work — direct baseline |
-| [3] | Sun, X. et al. — *Supervised Hierarchical CBM* | Under review | Sequential training reference |
-| [4] | Poeta, E. et al. — *Concept-based XAI: A Survey* | ACM CSUR 2025 | Survey — teacher is co-author |
-| [5] | Bertinetto, L. et al. — *Making Better Mistakes* | CVPR 2020 | Hierarchical Distance / mistake severity |
-| [6] | Hase, P. et al. — *Interpretable Image Recognition with Hierarchical Prototypes* | AAAI 2019 | Hierarchical architecture |
-| [7] | Lin, T.Y. et al. — *Focal Loss for Dense Object Detection* | ICCV 2017 | Focal Loss for L2 attribute imbalance |
-| [8] | Kendall, A. et al. — *Multi-Task Learning Using Uncertainty* | CVPR 2018 | Learnable lambda weights |
+| [3] | Sun, X. et al. — *Supervised Hierarchical CBM* | Under review | Sequential training schedule |
+| [4] | Poeta, E. et al. — *Concept-based XAI: A Survey* | ACM CSUR 2025 | Survey — defines the open problems we attack |
+| [5] | Bertinetto, L. et al. — *Making Better Mistakes* | CVPR 2020 | Hierarchy-aware mistake severity |
+| [6] | Hase, P. et al. — *Interpretable Image Recognition with Hierarchical Prototypes* | AAAI 2019 | Hierarchical architecture (over classes) |
+| [7] | Lin, T.Y. et al. — *Focal Loss for Dense Object Detection* | ICCV 2017 | Focal Loss for the L2 attribute imbalance |
+| [8] | Kendall, A. et al. — *Multi-Task Learning Using Uncertainty* | CVPR 2018 | Theoretical basis for multi-loss weighting |
