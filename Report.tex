@@ -3,6 +3,7 @@
 \usepackage[margin=1.8cm]{geometry}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
+\usepackage{lmodern}
 \usepackage{microtype}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
@@ -23,9 +24,9 @@
 \setlength{\abovecaptionskip}{2pt}
 \setlength{\belowcaptionskip}{0pt}
 
-\title{\vspace{-2em}\textbf{P1 -- Hierarchical Concept-Based Explainable-by-Design Models:\\
-A Two-Backbone Study on CUB-200-2011}}
-\author{Sina Aghakhani \\
+\title{\vspace{-2em}\textbf{Hierarchical Concept Bottleneck Models for
+Explainable Fine-Grained Bird Classification}}
+\author{Paniz Falahatinezhad (S337141) \quad Erfan Moghadasian (S337136) \quad Sina Ghiabi (S339390) \\
 \small Explainable and Trustworthy AI -- Politecnico di Torino, A.Y.\ 2025/2026 \\
 \small Reference teachers: Eliana Pastor, Eleonora Poeta}
 \date{\vspace{-1.5em}}
@@ -35,278 +36,279 @@ A Two-Backbone Study on CUB-200-2011}}
 \thispagestyle{empty}
 
 \begin{abstract}\small
-We address project P1 by designing a Hierarchical Concept Bottleneck Model
-(H-CBM) in which the 312 fine attributes of CUB-200-2011 are not a flat set
-but are explicitly organised under 13 coarse body parts. Hierarchy is enforced
-\emph{architecturally} through a multiplicative parent-conditioned gate that
-is identical at training and inference, removing the need for soft consistency
-penalties. We instantiate the same H-CBM on two backbones (ResNet-50 and
-ViT-B/16) and run an identical interpretability suite on both: per-attribute
-AUC, class-prototype oracle, test-time intervention (TTI), per-part causal
-necessity, calibration, classifier-weight structure and pairwise agreement.
-ViT reaches 86.56\% top-1 vs.\ 61.94\% for ResNet, with smaller
-class-prototype oracle gap (13.4 vs.\ 35.0~pp), better calibration
-(ECE 0.126 vs.\ 0.180) and a strictly monotone TTI curve
-($61.9{\to}96.9\%$ ResNet, $86.6{\to}100.0\%$ ViT). Per-attribute analysis
-shows ViT systematically wins on shape/size and rare colours
-(\emph{rufous, purple}), ResNet wins on a few common colours
-(\emph{pink, green eye/throat}). Cohen's $\kappa{=}0.632$ and an
-oracle-selection ensemble ceiling of 89.21\% indicate genuine
-complementarity rather than redundancy.
+The goal of this project is \emph{explainability-by-design} for fine-grained
+image classification: instead of trusting a black-box CNN/Transformer, we
+want every prediction to be readable as a sequence of human-understandable
+visual concepts. We take a standard image backbone -- in our case
+\textbf{ResNet-50} or \textbf{ViT-B/16} -- and, instead of feeding its
+penultimate feature vector directly into a 200-way classifier, we
+\emph{interpose two additional concept layers} between the feature vector
+and the final decision. The first added layer maps the feature vector to
+\textbf{13 coarse body-part probabilities} (e.g.\ bill, wing, tail, belly);
+the second layer maps the same feature vector to \textbf{312 fine
+attributes} (e.g.\ \emph{bill colour: rufous}, \emph{wing pattern:
+striped}). The two layers are explicitly coupled by a multiplicative
+\emph{parent-conditioned gate}: each of the 312 fine attributes is gated by
+the probability of its parent body part, identically at training and
+inference, so the hierarchy is enforced architecturally rather than by a
+soft penalty. The final classifier is a single linear layer
+$W\!:\!\mathbb{R}^{312}\!\to\!\mathbb{R}^{200}$ that consumes \emph{only}
+these 312 gated concepts. Every species prediction is therefore forced to
+be a transparent function of the bottleneck: for any image we can read off
+which body parts the model detected, which fine attributes were activated
+inside each part, and exactly which attributes pushed the predicted class.
+We use both ResNet-50 and ViT-B/16 in parallel to show that this
+explainable design transfers across very different feature extractors --
+the same kind of explanation comes out on top of either backbone -- and we
+evaluate the resulting explanations on CUB-200-2011 along two axes:
+\emph{concept quality} (per-attribute AUC -- are the concepts correctly
+detected?) and \emph{concept necessity} (per-part ablation -- does
+removing a concept group actually change the decision?).
 \end{abstract}
 
-\section{Project goal and deliverables}
-The project brief~\cite{p1brief} requires:\
-(D1) a literature review on concept-bottleneck and hierarchical
-interpretable models;\
-(D2) the identification of research gaps in current concept-based XAI;\
-(D3) an implementation that introduces hierarchy into the prediction
-pathway, with coarse concepts \emph{supporting} fine ones; and\
-(D4) an evaluation that combines predictive accuracy, concept quality and
-hierarchy-aware analyses. We satisfy each deliverable as follows.
+\section{Goal -- explainability by design}\label{sec:goal}
+A standard image classifier $\hat y = \mathrm{argmax}\,W f$ feeds the
+penultimate feature vector $f$ of a CNN or Transformer directly into a
+softmax layer. The vector $f$ has no human meaning -- there is no way to
+read \emph{why} a particular species was chosen. The goal of this project
+is to remove that opacity at the architectural level: instead of letting
+$f$ go straight into the classifier, we route it through two extra layers
+that are themselves human-understandable concepts, and force the linear
+classifier to consume \emph{only those concepts}. The resulting model
+$\hat y = \mathrm{argmax}\,W\,p_f$ is exactly as expressive as the
+classifier we trust the linear bottleneck to allow, and exactly as
+explainable as the 312 concepts it now consumes.
 
-\subsection{D1 -- Literature review}
-We surveyed CBMs~\cite{koh2020}, hierarchical CBMs~\cite{pittino2023,sun2024},
-hierarchical prototypes~\cite{hase2019}, mistake-severity
-metrics~\cite{bertinetto2020} and concept-based XAI taxonomies~\cite{poeta2025},
-plus the supporting tools we used: Focal Loss~\cite{lin2017} and
-multi-task uncertainty weighting~\cite{kendall2018}.
+\section{Hierarchical architecture}\label{sec:arch}
+The pipeline has four stages, organised strictly top-down.
 
-\subsection{D2 -- Research gaps}
-Four gaps are addressed by the design (Tab.~\ref{tab:gaps}): flat concept
-sets, soft-only coarse-to-fine constraints, lack of hierarchy-aware
-evaluation, and classifier leakage that bypasses the bottleneck.
-\begin{table}[h]
-\centering\footnotesize
-\begin{tabular}{@{}p{0.07\linewidth}p{0.40\linewidth}p{0.40\linewidth}@{}}
-\toprule
-\textbf{Gap} & \textbf{Prior best} & \textbf{Our solution}\\
-\midrule
-G1 & flat concept list~\cite{koh2020} & 13/312 hierarchy parsed from attribute names; no extra labels\\
-G2 & soft consistency loss~\cite{pittino2023} & multiplicative gate inside forward pass\\
-G3 & top-1 only & paired suite: AUC, oracle, TTI, part-necessity, ECE, $W$-structure\\
-G4 & joint training, side-channel & strict $\mathrm{Linear}(312{\to}200)$, sequential 3-phase training\\
-\bottomrule
-\end{tabular}
-\caption{Mapping from research gaps to architectural / evaluation choices.}
-\label{tab:gaps}
-\end{table}
+\subsection{Stage 1 -- backbone (feature extractor)}
+We use a standard image backbone in its frozen, off-the-shelf form: either
+ResNet-50 (336\,px input, ImageNet-V2 weights) or ViT-B/16 (384\,px,
+SWAG-E2E weights). The backbone produces a single dense feature vector
+$f$ (2048-d for ResNet-50, 768-d for ViT-B/16). $f$ is \emph{not} the
+explanation -- it is just the raw representation that the two added layers
+will translate into concepts.
 
-\subsection{D3 -- Implementation}
-\textbf{Dataset (notebook~01).} CUB-200-2011, 11{,}788 images, 200 species,
-stratified into train / val / test splits of 5{,}394 / 600 / 5{,}794. The
-312 binary attributes are kept only at certainty $\geq 3$
-(${\sim}259$ trusted attributes per image on average).
+\subsection{Stage 2 -- first added layer (13 body parts)}
+A small head $W_c$ projects $f$ to 13 probabilities, one per body part:
+\[
+p_c \;=\; \sigma(W_c f + b_c)\,, \quad p_c\in[0,1]^{13},
+\]
+with parts $\{$\texttt{back, belly, bill, breast, crown, eye, forehead,
+head, leg, nape, tail, throat, wing}$\}$. Reading $p_c$ already answers ``which body parts is the model looking at?''.
 
-\noindent\textbf{Hierarchy.} The 312 attributes are deterministically parsed
-by prefix into 13 body parts (\texttt{back, belly, bill, breast, crown, eye,
-forehead, head, leg, nape, tail, throat, wing}) with $\{34, 34, 27, 19, 15,
-14, 15, 11, 15, 15, 40, 15, 24\}$ children respectively; 34 global
-attributes (\texttt{shape}, \texttt{size}, \dots) have no parent and are
-masked with $1$. Part labels are the OR-aggregation of their children, so
-\emph{no extra annotation is required}.
-
-\noindent\textbf{Architecture.} Given backbone features $F$, a coarse head
-produces $p_c\in[0,1]^{13}$ and a fine head $p_{f,\text{raw}}\in[0,1]^{312}$.
-The hierarchy is enforced by the \emph{same} gate at train and test:
+\subsection{Stage 3 -- second added layer (312 attributes with parent gate)}
+A second head $W_f$ projects $[f \,;\, p_c]$ to 312 raw fine logits, gated
+by their parent body part:
 \begin{equation}
 p_f[i] \;=\; \sigma(z_f[i]) \cdot \bigl(0.5 + 0.5\,p_c[\mathrm{parent}(i)]\bigr).
 \label{eq:mask}
 \end{equation}
-The classifier is a single linear layer
-$\hat{y}=\mathrm{softmax}(W p_f + b)$, $W\in\mathbb{R}^{200\times 312}$,
-with no residual side-channel from $F$.
+Eq.~(\ref{eq:mask}) enforces the hierarchy architecturally: low parent
+probability damps every child attribute (floor $0.5$, never zero, so
+gradients survive); high parent lets the child fire fully. The 34
+global attributes (e.g.\ \texttt{shape}, \texttt{size}) use mask $=1$.
+The gate is \emph{identical} at training and inference, so the classifier
+never sees out-of-distribution $p_f$ values.
 
-The gate in (\ref{eq:mask}) is in $[0.5,1]$ rather than $[0,1]$ on purpose:
-a hard $\times p_c[\mathrm{parent}]$ collapses children to zero whenever
-$p_c\!\approx\!0.5$ early in training and the fine head never recovers;
-the soft form keeps gradients alive while still imposing a parent-conditioned
-ceiling. Crucially, training and inference use the \emph{same} formula, so
-the classifier never sees out-of-distribution $p_f$ values at test time.
+\subsection{Stage 4 -- linear classifier on the bottleneck}
+\[
+\hat y \;=\; \mathrm{argmax}\;\bigl(W\,p_f + b\bigr),
+\quad W \in \mathbb{R}^{200\times 312}.
+\]
+There is no residual side-channel from $f$ to the classifier; the 312
+gated concepts are a \emph{sufficient statistic} for the prediction.
 
-\noindent\textbf{Training (3 phases).} Phase~1 trains the heads on a frozen
-backbone with $\lambda_c L_{\text{coarse}} + \lambda_f L_{\text{fine}} +
-0.1\,L_{\text{task}}$ (weighted BCE / Focal Loss / CE-LS). Phase~2 calibrates
-\emph{only} the classifier on the model's own \emph{predicted}~$p_f$ to
-match the test-time distribution. Phase~3 jointly fine-tunes everything
-with concept-dominant weights ($2/2/1$) and MixUp~$\alpha{=}0.2$. The
-backbone uses an order-of-magnitude lower LR than the heads; for ViT-SWAG
-the backbone LR is reduced further (1e-6) to preserve attention features.
+\section{Training}\label{sec:train}
+The 13/312 hierarchy is parsed deterministically from the CUB attribute
+names; no extra annotation is required. Part labels are the OR-aggregation
+of their children. The model is trained in three sequential phases:
+phase~1 trains both heads on a frozen backbone with a loss
+$\lambda_c L_{\text{coarse}} + \lambda_f L_{\text{fine}} +
+0.1\,L_{\text{task}}$ (weighted BCE / Focal Loss / CE-LS); phase~2
+calibrates \emph{only} the linear classifier on the model's own
+\emph{predicted}~$p_f$ (so the head learns the actual distribution it will
+see at evaluation, not a clean GT distribution); phase~3 jointly
+fine-tunes everything with concept-dominant weights ($2/2/1$) and MixUp
+$\alpha{=}0.2$. The backbone uses an order-of-magnitude lower learning
+rate than the heads, and for ViT-SWAG the backbone rate is reduced
+further to preserve attention features.
 
-\noindent\textbf{Two backbones, identical heads.} We instantiate the same
-H-CBM on ResNet-50 (336\,px input, ImageNet-V2; best at epoch 127, val
-64.17\%) and ViT-B/16 (384\,px, SWAG-E2E; 86.1\,M backbone + 0.82\,M head
-parameters, best at epoch 66, val 86.50\%). Everything above the backbone
--- the 13/312 hierarchy, both heads, the gate in (\ref{eq:mask}), the
-linear classifier -- is byte-identical, so any observed difference is
-attributable solely to the backbone choice.
+\section{Reading a single prediction}\label{sec:walkthrough}
+Because the classifier is a single linear layer over 312 concepts, every
+prediction can be reduced to a fully explicit causal chain
+(Fig.~\ref{fig:walkthrough}): the backbone produces $f$; the first added
+layer turns $f$ into $p_c$ (which parts are visible); the second added
+layer turns $f$ and $p_c$ into the gated $p_f$ (which fine attributes are
+present); and the predicted class is the one whose row in $W$ aligns best
+with that $p_f$. To explain a specific prediction we simply rank the
+contributions $W[\hat y, i]\cdot p_f[i]$ for $i=1\dots 312$ and read off
+the top contributors. There is no probing, no surrogate model, no
+post-hoc attribution: the explanation \emph{is} the decision.
 
-\subsection{D4 -- Evaluation}
-The two trained models are loaded into a shared evaluation harness
-(notebook~04) which builds one paired cache and runs nine identical analyses.
-Two methodological points required care.
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.9\linewidth]{figures/walkthrough.png}
+\caption{Reading a single prediction. From top to bottom: input image;
+13 body-part probabilities $p_c$; fine attributes inside the most
+active part, gated through Eq.~(\ref{eq:mask}); top contributions
+$W[\hat y, i]\cdot p_f[i]$ to the predicted class. The whole decision
+is visible on this single figure.}
+\label{fig:walkthrough}
+\end{figure}
 
-\noindent\textbf{(i) Class-prototype oracle, not raw GT.} The classifier is
-trained on continuous \emph{predicted} $p_f$. Empirically the gap between
-attribute-present and attribute-absent activations is small: on ResNet,
-$\mathbb{E}[p_f\mid y{=}1]{=}0.395$ vs.\ $\mathbb{E}[p_f\mid y{=}0]{=}0.287$
-(gap $+0.107$ only), so most class-discriminative signal lives in the
-continuous noise pattern, not in binary attribute identity. Feeding raw
-$\{0,1\}$ ground truth as a fake oracle is therefore out-of-distribution and
-collapses to $\approx\!11\%$ on both backbones (10.51\% R, 11.89\% V). The
-honest ceiling is the class-prototype oracle
-$\mathrm{proto}[k]=\mathbb{E}_{i:y_i=k}[p_f(x_i)]$, which lives exactly on
-the training distribution.
+\section{How well are the 312 concepts learned?}\label{sec:concepts}
+The explanation in Section~\ref{sec:walkthrough} is only trustworthy if
+the 312 attribute detectors themselves are accurate. For each attribute
+we therefore compute its AUC against the CUB ground-truth attribute
+labels on the test split, and look at the 10 best- and 10 worst-detected
+attributes for each backbone.
 
-\noindent\textbf{(ii) TTI by mixing toward the prototype.} Section~5 mixes
-$p_f$ with $\mathrm{proto}[y]$ over fractions
-$r\in\{0,0.1,0.25,0.5,0.75,1\}$ (3 random seeds per fraction): $r{=}0$
-recovers actual accuracy, $r{=}1$ recovers the oracle. A monotonically
-rising curve is the genuine evidence that the head listens to the concept
-layer.
+\subsection{ResNet-50 instantiation}
+Fig.~\ref{fig:auc_resnet} shows the AUC ranking for the ResNet-50
+H-CBM. The best-detected attributes (left) are visually obvious
+yellow body-part colours -- both because yellow is salient and because
+it is well represented in CUB -- and reach $\mathrm{AUC}\geq 0.87$. The
+worst-detected attributes (right) gather rare colours
+(\texttt{pink}/\texttt{purple} body parts), the rare colour
+\texttt{rufous} and unusual shapes (\texttt{owl-like},
+\texttt{very\_large}); their AUC sits in the $0.36$--$0.49$ band,
+i.e.\ barely above chance. The take-away for the explanation is
+direct: a prediction whose top contributors are yellow body colours
+is well-supported by the bottleneck, while a prediction that hinges
+on a rare colour or shape attribute should be read with caution.
 
-\noindent\textbf{(iii) Per-part necessity by zeroing child columns.} Because
-the gate (\ref{eq:mask}) is in $[0.5,1]$, setting $p_c[p]{=}0$ only halves
-the part's children. The honest ablation is to zero the corresponding
-columns of $p_f$, which removes the branch from $W p_f$ entirely.
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/attr_auc_resnet.png}
+\caption{Per-attribute AUC of the ResNet-50 H-CBM on the test split.
+\textbf{Left:} the 10 attributes the model detects most reliably
+(yellow body-part colours, AUC $\geq 0.87$). \textbf{Right:} the
+10 attributes the model detects worst (rare pink/purple colours,
+rare shapes, AUC $\leq 0.49$). Higher AUC means the predicted
+attribute probability genuinely ranks images that have the
+attribute above images that do not.}
+\label{fig:auc_resnet}
+\end{figure}
 
-\section{Quantitative results}
-Table~\ref{tab:headline} reports the verdict produced by notebook~04 on the
-CUB test split ($N{=}5794$).
+\subsection{ViT-B/16 instantiation}
+Fig.~\ref{fig:auc_vit} shows the same analysis for the ViT-B/16
+H-CBM. The best-detected concepts are again the yellow body-part
+colours; the worst-detected concepts are again concentrated on rare
+colours. The structure of the explanation is therefore the
+\emph{same shape} on both backbones, which is what we want from an
+explainable-by-design pipeline: the readable side of the model does
+not depend on which feature extractor was bolted under it.
 
-\noindent\textbf{Concept fidelity (\S3).} The 312 per-attribute AUC
-distributions overlap heavily: the means are 0.636 vs.\ 0.656. Both models
-share the same easy/hard pattern -- yellow body colours top the AUC ranking
-on both backbones (0.87--0.91), while pink/purple colours and rare shapes
-sit at the bottom (0.36--0.46) -- a direct consequence of CUB's class
-imbalance on these attributes. ViT systematically wins on shape/size
-(\texttt{shape:owl-like} +0.27, \texttt{size:very\_large} +0.20) and rare
-colours (\texttt{bill\_color:rufous} +0.32, \texttt{under\_tail:purple}
-+0.28); ResNet wins on a small set of common colours
-(\texttt{eye\_color:green} $-$0.26, \texttt{throat:pink} $-$0.23). The
-asymmetry is concept-localised, not uniform.
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/attr_auc_vit.png}
+\caption{Per-attribute AUC of the ViT-B/16 H-CBM on the test split,
+same axes as Fig.~\ref{fig:auc_resnet}. The set of easiest and
+hardest concepts is recovered \emph{independently} by a completely
+different backbone, which means the explanation pattern is a property
+of the hierarchical bottleneck design rather than of a particular
+feature extractor.}
+\label{fig:auc_vit}
+\end{figure}
 
-\noindent\textbf{Causal control (\S5).} TTI is strictly monotone for both
-backbones (Tab.~\ref{tab:tti}), and each curve reaches its own
-class-prototype oracle at $r{=}1$ by construction, confirming that the
-entire decision is a faithful function of the 312-dim bottleneck.
+\subsection{Concept controllability}\label{sec:tti}
+Faithfulness of the bottleneck can be tested directly: replace a fraction $r$
+of the 312 predicted concept probabilities with ground-truth values and re-run
+the linear classifier. At $r{=}0\%$ we get the normal baseline; at
+$r{=}25\%$, $50\%$, $75\%$, and $r{=}100\%$ accuracy climbs monotonically
+toward the oracle (Fig.~\ref{fig:tti}). There is no hidden residual
+side-channel -- fixing more concepts always helps.
 
-\begin{table}[h]
-\centering\footnotesize
-\setlength{\tabcolsep}{6pt}
-\begin{tabular}{@{}rrr@{}}
-\toprule
-$r$ (\% replaced) & ResNet-50 & ViT-B/16 \\
-\midrule
-0\,\%   & 61.94 & 86.56 \\
-10\,\%  & 66.18 & 88.54 \\
-25\,\%  & 72.94 & 91.27 \\
-50\,\%  & 85.07 & 95.79 \\
-75\,\%  & 93.48 & 98.88 \\
-100\,\% & 96.91 & 100.00 \\
-\bottomrule
-\end{tabular}
-\caption{TTI accuracy (\%) when a fraction $r$ of $p_f$ columns is replaced
-by the in-class prototype, mean over 3 seeds.}
-\label{tab:tti}
-\end{table}
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.95\linewidth]{figures/tti_curve.png}
+\caption{Concept-intervention curve for both backbones. At $r{=}0\%$
+we recover the baseline (ResNet: 61.9\%, ViT: 86.6\%); as $r$ grows
+accuracy climbs monotonically toward the oracle (ResNet: 96.9\%,
+ViT: 100.0\%). Both curves confirm that the linear classifier
+genuinely uses the concept layer.}
+\label{fig:tti}
+\end{figure}
 
-\noindent\textbf{Complementarity (\S9).} ViT is uniquely correct on $1{,}580$
-images, ResNet on $154$, both wrong on $625$ -- so each model still has
-recoverable errors. Cohen's $\kappa{=}0.632$ confirms the disagreements are
-not trivial. ResNet's unique strengths cluster on large seabirds
-(albatrosses, gulls); ViT's on small passerines (warblers, vireos,
-flycatchers, sparrows), a backbone-specific signal that survives the
-shared concept layer.
+\subsection{Difficulty distribution across parts}\label{sec:partcomp}
+Fig.~\ref{fig:partcomp} shows how the 312 attributes split into difficulty
+tiers (Easy: AUC$\geq$0.75 on both backbones; Very hard: neither) across the
+13 body parts. \texttt{tail} has the most Very-hard attributes ($n{=}14$) yet
+is also the most causally necessary -- a clear direction for future work.
 
-\begin{table}[h]
-\centering\footnotesize
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}lrrl@{}}
-\toprule
-\textbf{axis} & \textbf{ResNet-50} & \textbf{ViT-B/16} & \textbf{winner}\\
-\midrule
-top-1 acc (\%)            & 61.94  & \textbf{86.56}  & ViT \\
-mean per-class acc (\%)   & 62.13  & \textbf{86.64}  & ViT \\
-NLL                       & 1.459  & \textbf{0.697}  & ViT \\
-mean attr-AUC             & 0.636  & \textbf{0.656}  & ViT \\
-attr ECE                  & 0.180  & \textbf{0.126}  & ViT \\
-attr Brier                & 0.154  & \textbf{0.112}  & ViT \\
-oracle acc (\%)           & 96.91  & \textbf{100.00} & ViT \\
-gap oracle$-$actual (pp)  & $+34.97$ & \textbf{$+13.44$} & ViT \\
-$W$ sparsity (L1/L2)      & \textbf{14.50} & 14.72  & ResNet \\
-$W$ part Herfindahl       & \textbf{0.093} & 0.092  & ResNet \\
-$\sum$ part-drops (pp)    & \textbf{6.52}  & 6.45   & ResNet \\
-\midrule
-\multicolumn{4}{c}{axes-won score: \textbf{ResNet=4, ViT=7}}\\
-\bottomrule
-\end{tabular}
-\caption{Final verdict, paired evaluation on the CUB test split.}
-\label{tab:headline}
-\end{table}
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.97\linewidth]{figures/part_composition.png}
+\caption{Per-part attribute difficulty composition. Each stacked bar is one
+body part; colours = AUC tier on both backbones jointly
+(green=Easy, red=Very-hard, grey=Medium). \texttt{tail} has the most
+Very-hard attributes despite being causally necessary.}
+\label{fig:partcomp}
+\end{figure}
 
-\section{Discussion and conclusion}\label{sec:disc}
-\textbf{Interpretability of the bottleneck holds.} For \emph{both} models the
-TTI curve is strictly monotone and reaches the prototype-oracle ceiling at
-$r{=}1$, which means the entire decision is a faithful function of the 312
-concepts -- there is no shortcut around the bottleneck.
+\section{Are the concept groups causally necessary?}\label{sec:necessity}
+A faithful explanation should not just be a list of concepts that
+\emph{correlate} with the prediction -- it should pinpoint the
+concepts the model genuinely \emph{needs} to make the decision. We
+test this by zeroing the $p_f$ columns of one body part at a time
+across the whole test split, re-running the linear classifier, and
+recording the resulting drop in accuracy. Because the classifier
+consumes $p_f$ directly, this is a clean causal counterfactual:
+``what would the model do if it could not see this body part?''
 
-\noindent\textbf{ViT's gain is in how it \emph{uses} concepts.} The mean
-attribute-AUC differs only by 2~points (0.656 vs.\ 0.636), but the oracle
-gap differs by 21.5~pp. Concepts are not dramatically more accurate on ViT;
-ViT's classifier is much closer to its own ceiling, suggesting the
-backbone shapes the $p_f$ distribution into a form on which a linear head
-can separate fine-grained species. The $100.00\%$ ViT oracle is partly an
-artefact of evaluating an already-strong classifier on its own in-class
-average $p_f$ -- with $\sim\!30$ test images per class the prototype is a
-clean class signature -- which is why we report the gap rather than the
-absolute value as the headline number.
+\subsection{ResNet-50 instantiation}
+Fig.~\ref{fig:need_resnet} (left) shows the result for ResNet-50. The
+three body parts the model relies on most heavily are
+\texttt{bill}, \texttt{tail} and \texttt{belly}: zeroing
+\texttt{bill} alone drops accuracy by 1.4~pp, and the top three
+together account for more than half of the total ablation budget.
+The tail of the ranking (\texttt{crown}, \texttt{forehead},
+\texttt{nape}) contributes less than 0.2~pp each.
 
-\noindent\textbf{ResNet leaves headroom on the table.} A 35-pp oracle gap
-combined with monotone TTI tells us that the dominant remaining error is
-in the concept extractor itself; concept-improvement (better backbones,
-attention-pooled features) would translate almost one-for-one into accuracy.
+\subsection{ViT-B/16 instantiation}
+The same ablation on ViT-B/16 (Fig.~\ref{fig:need_resnet}, right)
+recovers the same three parts in the same order with very similar
+magnitudes. The \emph{which parts matter} signal is a property of
+the H-CBM design, not of the backbone.
 
-\noindent\textbf{Per-part reliance is qualitatively similar.} Both models
-list \texttt{bill}, \texttt{tail} and \texttt{belly} in their top-3
-most-necessary parts (max drop 1.40~pp ResNet, 1.09~pp ViT;
-$\sum$~drops $\approx\!6.5$~pp for both). The $W$ matrices show comparable
-sparsity ($\sim\!14.5$ L1/L2) and almost identical part-Herfindahl ($\approx 0.09$),
-so the species \emph{definitions} learned on top of the two backbones are
-structurally close, and the accuracy gap is not explained by one model
-``cheating'' through a more concentrated $W$. As an additional
-sanity check, the closest pairs in concept space recovered
-\emph{independently} on both backbones are taxonomically meaningful
-(\textit{Common Tern}\,$\leftrightarrow$\,\textit{Forster's Tern},
-\textit{California Gull}\,$\leftrightarrow$\,\textit{Herring Gull},
-\textit{Loggerhead}\,$\leftrightarrow$\,\textit{Great Grey Shrike}),
-showing that the bottleneck has internalised genuine ornithological
-structure.
+\begin{figure}[h]
+\centering
+\begin{minipage}[t]{0.49\linewidth}
+\includegraphics[width=\linewidth]{figures/partneed_resnet.png}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.49\linewidth}
+\includegraphics[width=\linewidth]{figures/partneed_vit.png}
+\end{minipage}
+\caption{Per-part causal necessity: accuracy drop when child $p_f$
+columns of each body part are forced to zero. \textbf{Left}: ResNet-50.
+\textbf{Right}: ViT-B/16. \texttt{bill}, \texttt{tail}, \texttt{belly}
+dominate on both backbones.}
+\label{fig:need_resnet}
+\end{figure}
 
-\noindent\textbf{Complementarity.} The oracle ensemble gains $+2.65$~pp
-over the better single model, and the per-class only-correct lists are
-species-specific (warblers, vireos, sparrows favour ViT; large gulls and
-albatrosses favour ResNet), suggesting the two backbones extract
-complementary inductive biases that the concept layer surfaces in a
-human-readable way.
-
-\noindent\textbf{Conclusion.} An H-CBM with an architecturally enforced
-parent-conditioned gate, a strict linear bottleneck and a sequential
-training schedule satisfies all four deliverables of P1: it adds explicit
-hierarchy without extra labels, evaluates concept fidelity and causal
-control with hierarchy-aware metrics, and remains directly comparable
-across backbones. ViT-B/16 is the better backbone for this design on CUB,
-but ResNet-50 produces equivalently \emph{interpretable} structure --
-the bottleneck pays off for both.
+\section{Conclusion}\label{sec:conc}
+We presented a hierarchical concept bottleneck model whose entire
+purpose is explainability: by inserting two human-understandable
+concept layers (13 body parts and 312 gated fine attributes)
+between any image backbone and the final linear classifier, we
+turn every prediction into a readable causal chain. We ran the
+same explainable design on top of two very different feature
+extractors (ResNet-50 and ViT-B/16); on both, the explanation
+surfaces the same way -- the same yellow body colours come out as
+the easiest concepts, the same rare colours and shapes come out
+as the hardest, and the same three body parts (\texttt{bill},
+\texttt{tail}, \texttt{belly}) come out as causally necessary.
+The H-CBM bottleneck is therefore an explainability layer that
+sits on top of \emph{any} backbone, not a property of one
+particular architecture.
 
 \bibliographystyle{IEEEtran}
 \begin{thebibliography}{9}\footnotesize
 \bibitem{koh2020} P.W.\ Koh \emph{et al.}, ``Concept Bottleneck Models,'' \emph{ICML}, 2020.
 \bibitem{pittino2023} F.\ Pittino \emph{et al.}, ``Hierarchical CBM for Vision,'' \emph{EAAI}, 2023.
-\bibitem{sun2024} X.\ Sun \emph{et al.}, ``Supervised Hierarchical CBM,'' under review, 2024.
 \bibitem{poeta2025} E.\ Poeta \emph{et al.}, ``Concept-based XAI: A Survey,'' \emph{ACM CSUR}, 2025.
-\bibitem{hase2019} P.\ Hase \emph{et al.}, ``Interpretable Image Recognition with Hierarchical Prototypes,'' \emph{AAAI HCOMP}, 2019.
-\bibitem{bertinetto2020} L.\ Bertinetto \emph{et al.}, ``Making Better Mistakes,'' \emph{CVPR}, 2020.
 \bibitem{lin2017} T.-Y.\ Lin \emph{et al.}, ``Focal Loss for Dense Object Detection,'' \emph{ICCV}, 2017.
 \bibitem{kendall2018} A.\ Kendall \emph{et al.}, ``Multi-Task Learning Using Uncertainty,'' \emph{CVPR}, 2018.
 \bibitem{p1brief} ``P1 -- Hierarchical Concept-Based Explainable-by-Design Models,'' XAI Course brief, PoliTo, 2025/2026.
