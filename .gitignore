@@ -48,5 +48,3 @@ Thumbs.db
 runs/
 wandb/
 
-*.pdf
-*.html
