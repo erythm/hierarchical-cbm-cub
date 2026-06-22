@@ -48,3 +48,8 @@ Thumbs.db
 runs/
 wandb/
 
+# Report & Presentation
+Report.tex
+Report.pdf
+presentation_outline.md
+
